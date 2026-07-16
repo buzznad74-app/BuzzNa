@@ -1,0 +1,11 @@
+# BuzzNa D74 Enterprise OS Robots File
+User-agent: *
+Allow: /
+Allow: /offline-generator
+Allow: /activation-generator.html
+Disallow: /api/
+Disallow: /admin/
+Disallow: /private/
+
+# Sitemap Link
+Sitemap: https://d74.buzzna.co.ke/sitemap.xml

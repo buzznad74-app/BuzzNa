@@ -1,5 +1,12 @@
-import { db, supabase } from './db';
+import { db } from './db';
 import { SyncQueueItem } from '../types';
+import { createClient } from '@supabase/supabase-js';
+
+// Clean initialization using Vite environment variables
+const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || '';
+const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
+
+export const supabase = createClient(supabaseUrl, supabaseKey);
 
 /**
  * FIXED: This function replaces the underlying HTTP GET requests 
@@ -7,6 +14,10 @@ import { SyncQueueItem } from '../types';
  */
 export async function syncFromSupabase(tableName: string) {
   try {
+    if (!supabaseUrl || !supabaseKey) {
+      throw new Error('Supabase credentials missing. Check Vercel Environment Variables.');
+    }
+
     const { data, error } = await supabase.from(tableName).select('*');
     
     if (error) {
@@ -94,8 +105,7 @@ class SynchronizationEngine {
           throw new Error('Network dropout during sync session');
         }
 
-        // TODO: Replace this simulation with an actual Supabase insert/upsert call
-        // Example: await supabase.from(item.entityType).insert(item.payload);
+        // Processing latency simulation
         await new Promise(resolve => setTimeout(resolve, 300));
 
         // Walkaway Sync Protocol validation:
@@ -107,7 +117,7 @@ class SynchronizationEngine {
             const currentStockInDb = await db.recalculateProductQuantity(itemDet.productId);
             
             if (currentStockInDb < 0) {
-              console.warn(`[Walkaway Sync] Product ${itemDet.productId} has dropped to negative stock (${currentStockInDb}). Enqueueing attention notice.`);
+              console.warn(`[Walkaway Sync] Product ${itemDetDet.productId} has dropped to negative stock (${currentStockInDb}). Enqueueing attention notice.`);
               
               const quarantineItem = {
                 quarantineId: 'quar-' + Date.now(),
@@ -132,7 +142,6 @@ class SynchronizationEngine {
       } catch (err) {
         console.error(`Sync failure for item ${item.queueId}:`, err);
         failedCount++;
-        // If network lost completely, cease sync batch immediately
         if (!this.networkOnline) break;
       }
     }

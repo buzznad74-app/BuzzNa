@@ -8,7 +8,7 @@ const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
 
 export const supabase = createClient(supabaseUrl, supabaseKey);
 
-/**
+/** 
  * FIXED: This function replaces the underlying HTTP GET requests 
  * that caused the 404 Vercel errors. It queries the Supabase DB directly.
  */

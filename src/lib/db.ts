@@ -227,7 +227,7 @@ class AppDatabase {
     await new Promise<void>((resolve, reject) => {
       const request = store.clear();
       request.onsuccess = () => resolve();
-      request.onerror = () => rej(req.error);
+      request.onerror = () => reject(request.error);
     });
 
     this.notifyListeners();

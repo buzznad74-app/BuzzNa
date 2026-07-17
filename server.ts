@@ -22,7 +22,7 @@ async function startServer() {
   // ============================================
   const requiredEnvVars = {
     SUPABASE_URL: process.env.SUPABASE_URL,
-    SUPABASE_SERVICE_ROLE_KEY: process.env.SUPABASE_SERVICE_ROLE_KEY,
+    SUPABASE_SERVICE_ROLE_KEY: process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SECRET_KEY,
   };
 
   const optionalEnvVars = {
@@ -43,7 +43,7 @@ async function startServer() {
 
   // Initialize Supabase Client (Lazy-loaded to avoid startup crashes if keys are not configured)
   const supabaseUrl = process.env.SUPABASE_URL || "";
-  const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY || "";
+  const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_ANON_KEY || "";
   let supabase: any = null;
 
   function getSupabaseClient() {
@@ -264,8 +264,8 @@ async function startServer() {
               </div>
               <hr style="border: 0; border-top: 1px solid #f4f4f5; margin-bottom: 24px;" />
               <p style="font-size: 15px; line-height: 1.5;">Dear <strong>${owner.username}</strong>,</p>
-              <p style="font-size: 14px; line-height: 1.5; color: #3f3f46;">Welcome to <strong>BuzzNa D74 Cloud OS</strong>! We are absolutely thrilled to partner with you to power and streamline your retail and operational excellence across all venues and branches.</p>
-              <p style="font-size: 14px; line-height: 1.5; color: #3f3f46;">Your 14-day premium enterprise trial has been successfully provisioned. You now have full administrative access to our unified retail ERP, offline-first POS terminal, and real-time business analytics dashboard.</p>
+              <p style="font-size: 14px; line-height: 1.5; color: #3f3f46;">Welcome to <strong>BuzzNa D74 Cloud OS</strong>! We are absolutely thrilled to partner with you to power and streamline your business operations across your entire enterprise ecosystem.</p>
+              <p style="font-size: 14px; line-height: 1.5; color: #3f3f46;">Your 14-day premium enterprise trial has been successfully provisioned. You now have full administrative access to our cutting-edge commerce platform.</p>
               
               <div style="background-color: #f5f3ff; border: 1px solid #ddd6fe; border-radius: 12px; padding: 18px; margin: 24px 0;">
                 <h3 style="color: #5b21b6; margin: 0 0 8px 0; font-size: 13px; text-transform: uppercase; font-weight: 700;">Next Steps to Launch:</h3>
@@ -306,7 +306,7 @@ async function startServer() {
               </div>
               <hr style="border: 0; border-top: 1px solid #f4f4f5; margin-bottom: 24px;" />
               <p style="font-size: 15px; line-height: 1.5;">Hello <strong>${owner.username}</strong>,</p>
-              <p style="font-size: 14px; line-height: 1.5; color: #3f3f46;">This email confirms that your business entity registration on BuzzNa D74 is fully processed and secured in our cloud storage.</p>
+              <p style="font-size: 14px; line-height: 1.5; color: #3f3f46;">This email confirms that your business entity registration on BuzzNa D74 is fully processed and secured in our cloud storage infrastructure.</p>
               
               <table style="width: 100%; border-collapse: collapse; margin: 24px 0; font-size: 13px;">
                 <thead>

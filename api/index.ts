@@ -7,7 +7,7 @@ app.use(express.json());
 
 // Initialize Supabase Client
 const supabaseUrl = process.env.SUPABASE_URL || "";
-const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY || "";
+const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_ANON_KEY || "";
 
 let supabase: any = null;
 
@@ -30,8 +30,8 @@ function getSupabaseClient() {
   return supabase;
 }
 
-// Supabase proxy endpoints
-app.post("/db/:table/upsert", async (req, res) => {
+// Supabase proxy endpoints - NOTE: These are kept as fallback. Primary endpoints are in server.ts with /api prefix
+app.post("/api/db/:table/upsert", async (req, res) => {
   try {
     const { table } = req.params;
     const { item } = req.body;
@@ -45,7 +45,7 @@ app.post("/db/:table/upsert", async (req, res) => {
       return res.json({ success: true, localOnly: true });
     }
 
-    const id = String(item.tenantId || item.productId || item.categoryId || item.userId || item.customerId || item.transactionId || item.itemId || item.expenseId || item.sessionId || item.ledgerId || item.id || Date.now());
+    const id = String(item.tenantId || item.productId || item.categoryId || item.userId || item.customerId || item.transactionId || item.itemId || item.expenseId || item.sessionId || item.ledgerId || `local_${Date.now()}`);
     const tenantId = item.tenantId || null;
 
     const { error } = await client
@@ -69,7 +69,7 @@ app.post("/db/:table/upsert", async (req, res) => {
   }
 });
 
-app.get("/db/:table", async (req, res) => {
+app.get("/api/db/:table", async (req, res) => {
   try {
     const { table } = req.params;
 
@@ -95,7 +95,7 @@ app.get("/db/:table", async (req, res) => {
   }
 });
 
-app.delete("/db/:table/:id", async (req, res) => {
+app.delete("/api/db/:table/:id", async (req, res) => {
   try {
     const { table, id } = req.params;
 
@@ -121,7 +121,7 @@ app.delete("/db/:table/:id", async (req, res) => {
   }
 });
 
-app.post("/db/:table/clear", async (req, res) => {
+app.post("/api/db/:table/clear", async (req, res) => {
   try {
     const { table } = req.params;
 
@@ -146,8 +146,8 @@ app.post("/db/:table/clear", async (req, res) => {
   }
 });
 
-// Business Onboarding
-app.post("/register-onboarding", async (req, res) => {
+// Business Onboarding - Fallback endpoint (primary is in server.ts)
+app.post("/api/register-onboarding", async (req, res) => {
   try {
     const { business, settings, owner, password } = req.body;
 
@@ -187,7 +187,6 @@ app.post("/register-onboarding", async (req, res) => {
       if (resOwn.error) throw new Error(`Owner save failed: ${resOwn.error.message}`);
     }
 
-    // Send Welcome & Confirmation Emails via Brevo API
     const brevoApiKey = process.env.BREVO_API_KEY;
     const senderEmail = process.env.BREVO_SENDER_EMAIL || "no-reply@buzzna.com";
     const senderName = process.env.BREVO_SENDER_NAME || "BuzzNa D74 Cloud OS";
@@ -204,7 +203,7 @@ app.post("/register-onboarding", async (req, res) => {
             <hr style="border: 0; border-top: 1px solid #f4f4f5; margin-bottom: 24px;" />
             <p style="font-size: 15px; line-height: 1.5;">Dear <strong>${owner.username}</strong>,</p>
             <p style="font-size: 14px; line-height: 1.5; color: #3f3f46;">Welcome to <strong>BuzzNa D74 Cloud OS</strong>! We are absolutely thrilled to partner with you to power and streamline your business operations.</p>
-            <p style="font-size: 14px; line-height: 1.5; color: #3f3f46;">Your 14-day premium enterprise trial has been successfully provisioned. You now have full administrative access to our unified retail ERP and offline-first POS terminal.</p>
+            <p style="font-size: 14px; line-height: 1.5; color: #3f3f46;">Your 14-day premium enterprise trial has been successfully provisioned. You now have full administrative access to our unlimited feature set.</p>
             
             <div style="background-color: #f5f3ff; border: 1px solid #ddd6fe; border-radius: 12px; padding: 18px; margin: 24px 0;">
               <h3 style="color: #5b21b6; margin: 0 0 8px 0; font-size: 13px; text-transform: uppercase; font-weight: 700;">Next Steps to Launch:</h3>
@@ -245,7 +244,7 @@ app.post("/register-onboarding", async (req, res) => {
             </div>
             <hr style="border: 0; border-top: 1px solid #f4f4f5; margin-bottom: 24px;" />
             <p style="font-size: 15px; line-height: 1.5;">Hello <strong>${owner.username}</strong>,</p>
-            <p style="font-size: 14px; line-height: 1.5; color: #3f3f46;">This email confirms that your business entity registration on BuzzNa D74 is fully processed and secured in our cloud storage.</p>
+            <p style="font-size: 14px; line-height: 1.5; color: #3f3f46;">This email confirms that your business entity registration on BuzzNa D74 is fully processed and secured in our cloud storage infrastructure.</p>
             
             <table style="width: 100%; border-collapse: collapse; margin: 24px 0; font-size: 13px;">
               <thead>
@@ -322,8 +321,8 @@ app.post("/register-onboarding", async (req, res) => {
   }
 });
 
-// Paystack Billing Endpoints
-app.post("/billing/paystack/initialize", async (req, res) => {
+// Paystack Billing Endpoints - Fallback (primary is in server.ts)
+app.post("/api/billing/paystack/initialize", async (req, res) => {
   try {
     const { email, amount, callbackUrl, tenantId } = req.body;
 
@@ -386,7 +385,7 @@ app.post("/billing/paystack/initialize", async (req, res) => {
   }
 });
 
-app.get("/billing/paystack/verify/:reference", async (req, res) => {
+app.get("/api/billing/paystack/verify/:reference", async (req, res) => {
   try {
     const { reference } = req.params;
 
@@ -444,7 +443,7 @@ app.get("/billing/paystack/verify/:reference", async (req, res) => {
   }
 });
 
-// Server-side Gemini API initialization
+// Server-side Gemini API initialization - Fallback (primary is in server.ts)
 const ai = new GoogleGenAI({
   apiKey: process.env.GEMINI_API_KEY,
   httpOptions: {
@@ -454,7 +453,7 @@ const ai = new GoogleGenAI({
   }
 });
 
-app.post("/gemini/forecast", async (req, res) => {
+app.post("/api/gemini/forecast", async (req, res) => {
   try {
     const { products, sales, industry } = req.body;
 
@@ -490,7 +489,7 @@ app.post("/gemini/forecast", async (req, res) => {
     `;
 
     const response = await ai.models.generateContent({
-      model: "gemini-3.5-flash",
+      model: "gemini-1.5-flash",
       contents: prompt,
     });
 

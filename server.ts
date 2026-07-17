@@ -264,8 +264,8 @@ async function startServer() {
               </div>
               <hr style="border: 0; border-top: 1px solid #f4f4f5; margin-bottom: 24px;" />
               <p style="font-size: 15px; line-height: 1.5;">Dear <strong>${owner.username}</strong>,</p>
-              <p style="font-size: 14px; line-height: 1.5; color: #3f3f46;">Welcome to <strong>BuzzNa D74 Cloud OS</strong>! We are absolutely thrilled to partner with you to power and streamline your business operations across your entire enterprise ecosystem.</p>
-              <p style="font-size: 14px; line-height: 1.5; color: #3f3f46;">Your 14-day premium enterprise trial has been successfully provisioned. You now have full administrative access to our cutting-edge commerce platform.</p>
+              <p style="font-size: 14px; line-height: 1.5; color: #3f3f46;">Welcome to <strong>BuzzNa D74 Cloud OS</strong>! We are absolutely thrilled to partner with you to power and streamline your business operations.</p>
+              <p style="font-size: 14px; line-height: 1.5; color: #3f3f46;">Your 14-day premium enterprise trial has been successfully provisioned. You now have full administrative access to our unlimited feature set.</p>
               
               <div style="background-color: #f5f3ff; border: 1px solid #ddd6fe; border-radius: 12px; padding: 18px; margin: 24px 0;">
                 <h3 style="color: #5b21b6; margin: 0 0 8px 0; font-size: 13px; text-transform: uppercase; font-weight: 700;">Next Steps to Launch:</h3>

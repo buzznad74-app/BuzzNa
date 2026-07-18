@@ -65,6 +65,7 @@ class AppDatabase {
           'customers',
           'customer_credit_ledger',
           'expenses',
+          'payment_allocations',
           'sync_queue'
         ];
 
@@ -103,6 +104,7 @@ class AppDatabase {
       case 'customers': return 'customerId';
       case 'customer_credit_ledger': return 'ledgerId';
       case 'expenses': return 'expenseId';
+      case 'payment_allocations': return 'allocationId';
       case 'sync_queue': return 'queueId';
       default: return 'id';
     }
@@ -177,6 +179,7 @@ class AppDatabase {
           itemAny.expenseId ||
           itemAny.sessionId ||
           itemAny.ledgerId ||
+          itemAny.allocationId ||
           `local_${Date.now()}`
         );
         const tenantId = itemAny.tenantId || null;
@@ -553,7 +556,7 @@ class AppDatabase {
 
     // Credit limit ceiling validation
     if (delta > 0 && nextDebt > customer.creditLimit) {
-      throw new Error(`Credit Limit Breached: Customer "${customer.customerName}" has a credit limit of KES ${customer.creditLimit}. Outstanding debt is KES ${customer.existingDebt}. Adding KES ${delta} would breach the ceiling.`);
+      throw new Error(`Credit Limit Breached: Customer "${customer.customerName}" has a credit limit of KES ${customer.creditLimit}. Outstanding debt is KES ${customer.existingDebt}. Cannot add KES ${delta}.`);
     }
 
     customer.existingDebt = Math.max(0, nextDebt);

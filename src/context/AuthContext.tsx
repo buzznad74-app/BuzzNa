@@ -2,7 +2,7 @@ import React, { createContext, useContext, useState, useEffect } from 'react';
 import { Business, BusinessSettings, User, VerticalTheme, LicenseStatus } from '../types';
 import { db, generateUUID } from '../lib/db';
 import { translate } from '../lib/translations';
-import { supabase } from '../lib/sync'; // <-- Added Supabase Import
+import { supabase } from '../lib/sync';
 
 interface AuthContextType {
   activeBusiness: Business | null;
@@ -12,6 +12,7 @@ interface AuthContextType {
   isDemoMode: boolean;
   onboardingStep: number;
   language: 'EN' | 'SW';
+  isAuthenticated: boolean;
   setLanguage: (lang: 'EN' | 'SW') => Promise<void>;
   t: (key: string) => string;
   login: (username: string, pinOrPass: string) => Promise<boolean>;
@@ -44,21 +45,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [activeUser, setActiveUser] = useState<User | null>(null);
   const [allUsers, setAllUsers] = useState<User[]>([]);
   const [isDemoMode, setIsDemoMode] = useState(true);
-  const [onboardingStep, setOnboardingStep] = useState(1); // Onboarding wizard step
-  
-  // Fully Bilingual State Engine (English / Kiswahili)
+  const [onboardingStep, setOnboardingStep] = useState(1);
   const [language, setLanguageState] = useState<'EN' | 'SW'>('EN');
 
   // Load initial session on startup
   useEffect(() => {
     const loadSession = async () => {
-      // Find businesses
       const businesses = await db.getAll<Business>('businesses');
       if (businesses.length > 0) {
         const bus = businesses[0];
         setActiveBusiness(bus);
 
-        // Detect and set business-owner tied language settings
         const preferredLang = localStorage.getItem('preferred_language');
         if (preferredLang === 'SW' || preferredLang === 'EN') {
           setLanguageState(preferredLang);
@@ -68,17 +65,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           setLanguageState('EN');
         }
 
-        // Find settings
         const settings = await db.getById<BusinessSettings>('business_settings', bus.tenantId);
         if (settings) {
           setBusinessSettings(settings);
         }
 
-        // Find users
         const users = await db.getAll<User>('users');
         setAllUsers(users);
 
-        // Check if there was an active user session in localStorage
         const cachedUserId = localStorage.getItem('active_user_id');
         if (cachedUserId) {
           const usr = users.find(u => u.userId === cachedUserId);
@@ -89,20 +83,18 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
     };
 
-    // Listen for database changes to sync lists automatically
     const unsubscribe = db.subscribe(loadSession);
     loadSession();
 
     return () => unsubscribe();
   }, []);
 
-  // Standard Login (Using password check for OWNER, PIN check for cashier/manager)
+  // Standard Login
   const login = async (username: string, pinOrPass: string): Promise<boolean> => {
     const users = await db.getAll<User>('users');
     const matched = users.find(u => u.username.toLowerCase().trim() === username.toLowerCase().trim());
     
     if (matched) {
-      // If a password or PIN is registered for this user, strictly verify it
       if (matched.password && matched.password !== pinOrPass) {
         return false;
       }
@@ -113,7 +105,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return false;
   };
 
-  // Fast hand-off user state switcher (WebAuthn/PIN simulation)
+  // Fast user switcher
   const fastSwitchUser = async (userId: string, pin: string): Promise<boolean> => {
     const users = await db.getAll<User>('users');
     const matched = users.find(u => u.userId === userId);
@@ -134,7 +126,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     localStorage.removeItem('active_user_id');
   };
 
-  // Wizard register onboarding
+  // Business registration with direct Supabase integration
   const registerBusiness = async (details: {
     legalName: string;
     tradeName?: string;
@@ -160,11 +152,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       language: details.language,
       timezone: details.timezone,
       licenseStatus: LicenseStatus.TRIAL_ACTIVE,
-      licenseExpiresAt: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString(), // 14-day trial
+      licenseExpiresAt: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString(),
       createdAt: new Date().toISOString()
     };
 
-    // Determine vertical theme based on industry selection
     let theme: VerticalTheme = VerticalTheme.RETAIL;
     let brandColor = 'indigo';
     const ind = details.industry.toLowerCase();
@@ -206,36 +197,53 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       password: details.password
     };
 
-    // DIRECT SUPABASE INTEGRATION (Replaces the broken /api/register-onboarding fetch call)
-    
-    // DIRECT SUPABASE INTEGRATION
-const { error: bizError } = await supabase.from('businesses').insert([{
-  tenant_id: newBusiness.tenantId,           // Notice the snake_case conversions
-  legal_name: newBusiness.legalName,
-  trade_name: newBusiness.tradeName,
-  industry: newBusiness.industry,
-  country: newBusiness.country,
-  currency: newBusiness.currency,
-  language: newBusiness.language,
-  timezone: newBusiness.timezone,
-  license_status: newBusiness.licenseStatus,
-  license_expires_at: newBusiness.licenseExpiresAt,
-  created_at: newBusiness.createdAt          // Changed from createdAt to created_at
-}]);
+    // Direct Supabase integration with proper snake_case conversions
+    const { error: bizError } = await supabase.from('businesses').insert([{
+      tenant_id: newBusiness.tenantId,
+      legal_name: newBusiness.legalName,
+      trade_name: newBusiness.tradeName,
+      industry: newBusiness.industry,
+      country: newBusiness.country,
+      currency: newBusiness.currency,
+      language: newBusiness.language,
+      timezone: newBusiness.timezone,
+      license_status: newBusiness.licenseStatus,
+      license_expires_at: newBusiness.licenseExpiresAt,
+      created_at: newBusiness.createdAt
+    }]);
     if (bizError) throw new Error(bizError.message || "Failed to initialize business in Cloud.");
 
-    const { error: settingsError } = await supabase.from('business_settings').insert([newSettings]);
+    const { error: settingsError } = await supabase.from('business_settings').insert([{
+      tenant_id: newSettings.tenantId,
+      chosen_theme: newSettings.chosenTheme,
+      brand_color: newSettings.brandColor,
+      daily_revenue_target: newSettings.dailyRevenueTarget,
+      weekly_revenue_target: newSettings.weeklyRevenueTarget,
+      monthly_revenue_target: newSettings.monthlyRevenueTarget,
+      daraja_paybill: newSettings.darajaPaybill,
+      daraja_till_number: newSettings.darajaTillNumber,
+      created_at: new Date().toISOString()
+    }]);
     if (settingsError) throw new Error(settingsError.message || "Failed to initialize settings in Cloud.");
 
-    const { error: ownerError } = await supabase.from('users').insert([newOwner]);
+    const { error: ownerError } = await supabase.from('users').insert([{
+      user_id: newOwner.userId,
+      tenant_id: newOwner.tenantId,
+      role: newOwner.role,
+      username: newOwner.username,
+      phone_number: newOwner.phoneNumber,
+      email_address: newOwner.emailAddress,
+      password: newOwner.password,
+      is_active: newOwner.isActive,
+      created_at: newOwner.createdAt
+    }]);
     if (ownerError) throw new Error(ownerError.message || "Failed to initialize owner in Cloud.");
 
-    // Commit to local DB (Offline fallback & instantaneous UI)
+    // Commit to local DB
     await db.put('businesses', newBusiness);
     await db.put('business_settings', newSettings);
     await db.put('users', newOwner);
 
-    // Load newly created state
     setActiveBusiness(newBusiness);
     setBusinessSettings(newSettings);
     setActiveUser(newOwner);
@@ -274,6 +282,8 @@ const { error: bizError } = await supabase.from('businesses').insert([{
     return translate(language, key);
   };
 
+  const isAuthenticated = activeUser !== null && activeBusiness !== null;
+
   return (
     <AuthContext.Provider value={{
       activeBusiness,
@@ -283,6 +293,7 @@ const { error: bizError } = await supabase.from('businesses').insert([{
       isDemoMode,
       onboardingStep,
       language,
+      isAuthenticated,
       setLanguage,
       t,
       login,

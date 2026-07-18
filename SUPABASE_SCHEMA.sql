@@ -1,247 +1,253 @@
--- BuzzNa D74 Supabase Schema (Production-Ready Multi-Tenant)
--- Execute this in Supabase SQL Editor to initialize your database
+-- BuzzNa D74 Enterprise Operating System
+-- Complete Supabase PostgreSQL Schema
+-- Deploy this SQL on your Supabase dashboard
 
-DROP TABLE IF EXISTS payment_allocations CASCADE;
-DROP TABLE IF EXISTS sale_items CASCADE;
-DROP TABLE IF EXISTS sales_transactions CASCADE;
-DROP TABLE IF EXISTS customer_credit_ledger CASCADE;
-DROP TABLE IF EXISTS customers CASCADE;
-DROP TABLE IF EXISTS inventory_events CASCADE;
-DROP TABLE IF EXISTS till_sessions CASCADE;
-DROP TABLE IF EXISTS products CASCADE;
-DROP TABLE IF EXISTS product_categories CASCADE;
-DROP TABLE IF EXISTS expenses CASCADE;
-DROP TABLE IF EXISTS users CASCADE;
-DROP TABLE IF EXISTS business_settings CASCADE;
-DROP TABLE IF EXISTS businesses CASCADE;
-DROP TABLE IF EXISTS buzzna_records CASCADE;
-DROP TABLE IF EXISTS sync_queue CASCADE;
-
-CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
-
--- BUSINESSES (Tenant Master)
-CREATE TABLE businesses (
-  tenantId UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  legalName VARCHAR(255) NOT NULL,
-  tradeName VARCHAR(255),
+-- ============================================
+-- TABLE: businesses (Tenant Master Records)
+-- ============================================
+CREATE TABLE IF NOT EXISTS businesses (
+  tenant_id UUID PRIMARY KEY,
+  legal_name VARCHAR(255) NOT NULL,
+  trade_name VARCHAR(255),
   industry VARCHAR(100),
-  country VARCHAR(100) NOT NULL,
-  currency VARCHAR(10) NOT NULL DEFAULT 'KES',
-  language VARCHAR(10) DEFAULT 'EN',
-  timezone VARCHAR(50),
-  licenseStatus VARCHAR(50) DEFAULT 'TRIAL_ACTIVE',
-  licenseExpiresAt TIMESTAMP WITH TIME ZONE,
-  createdAt TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-  updatedAt TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-);
-CREATE INDEX idx_businesses_country ON businesses(country);
-CREATE INDEX idx_businesses_licenseStatus ON businesses(licenseStatus);
-
--- BUSINESS_SETTINGS
-CREATE TABLE business_settings (
-  tenantId UUID PRIMARY KEY REFERENCES businesses(tenantId) ON DELETE CASCADE,
-  chosenTheme VARCHAR(50) DEFAULT 'retail',
-  brandColor VARCHAR(50) DEFAULT 'indigo',
-  dailyRevenueTarget DECIMAL(12, 2) DEFAULT 10000,
-  weeklyRevenueTarget DECIMAL(12, 2) DEFAULT 70000,
-  monthlyRevenueTarget DECIMAL(12, 2) DEFAULT 300000,
-  darajaPaybill VARCHAR(50),
-  darajaTillNumber VARCHAR(50),
-  darajaApiKey VARCHAR(255),
-  eodTime VARCHAR(10),
-  createdAt TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-  updatedAt TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-);
-
--- USERS
-CREATE TABLE users (
-  userId UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  tenantId UUID NOT NULL REFERENCES businesses(tenantId) ON DELETE CASCADE,
-  role VARCHAR(50) CHECK (role IN ('OWNER', 'MANAGER', 'CASHIER')),
-  username VARCHAR(100) NOT NULL,
-  phoneNumber VARCHAR(20),
-  emailAddress VARCHAR(255),
-  isActive BOOLEAN DEFAULT TRUE,
-  password VARCHAR(255),
-  createdAt TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-  updatedAt TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-  UNIQUE(tenantId, username)
-);
-CREATE INDEX idx_users_tenantId ON users(tenantId);
-
--- PRODUCT_CATEGORIES
-CREATE TABLE product_categories (
-  categoryId UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  tenantId UUID NOT NULL REFERENCES businesses(tenantId) ON DELETE CASCADE,
-  categoryName VARCHAR(255) NOT NULL,
-  createdAt TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-  updatedAt TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-  UNIQUE(tenantId, categoryName)
-);
-CREATE INDEX idx_product_categories_tenantId ON product_categories(tenantId);
-
--- PRODUCTS
-CREATE TABLE products (
-  productId UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  tenantId UUID NOT NULL REFERENCES businesses(tenantId) ON DELETE CASCADE,
-  categoryId UUID REFERENCES product_categories(categoryId) ON DELETE SET NULL,
-  barcode VARCHAR(100),
-  productName VARCHAR(255) NOT NULL,
-  costFloor DECIMAL(12, 2) NOT NULL,
-  retailPrice DECIMAL(12, 2) NOT NULL,
-  currentQuantity INTEGER DEFAULT 0,
-  isSerialized BOOLEAN DEFAULT FALSE,
-  expiryDate DATE,
-  supplierId VARCHAR(255),
-  imageUrl VARCHAR(500),
-  createdAt TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-  updatedAt TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-);
-CREATE INDEX idx_products_tenantId ON products(tenantId);
-CREATE INDEX idx_products_categoryId ON products(categoryId);
-CREATE INDEX idx_products_barcode ON products(barcode);
-
--- INVENTORY_EVENTS
-CREATE TABLE inventory_events (
-  eventId UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  tenantId UUID NOT NULL REFERENCES businesses(tenantId) ON DELETE CASCADE,
-  productId UUID NOT NULL REFERENCES products(productId) ON DELETE CASCADE,
-  userId UUID NOT NULL REFERENCES users(userId) ON DELETE CASCADE,
-  eventType VARCHAR(50) NOT NULL CHECK (eventType IN ('STOCK_ADD', 'SALE_DISPATCH', 'SPOILAGE', 'DAMAGE', 'THEFT_LOSS', 'REFUND_RETURN', 'STOCK_CORRECTION')),
-  quantityDelta INTEGER NOT NULL,
-  reasonCode VARCHAR(100),
-  terminalTimestamp TIMESTAMP WITH TIME ZONE,
-  createdAt TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-  updatedAt TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-);
-CREATE INDEX idx_inventory_events_tenantId ON inventory_events(tenantId);
-CREATE INDEX idx_inventory_events_productId ON inventory_events(productId);
-CREATE INDEX idx_inventory_events_eventType ON inventory_events(eventType);
-
--- TILL_SESSIONS
-CREATE TABLE till_sessions (
-  sessionId UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  tenantId UUID NOT NULL REFERENCES businesses(tenantId) ON DELETE CASCADE,
-  userId UUID NOT NULL REFERENCES users(userId) ON DELETE CASCADE,
-  openingFloat DECIMAL(12, 2) NOT NULL DEFAULT 0,
-  expectedCashBalance DECIMAL(12, 2) NOT NULL DEFAULT 0,
-  actualCashBalance DECIMAL(12, 2),
-  sessionStatus VARCHAR(50) CHECK (sessionStatus IN ('OPEN', 'CLOSED')) DEFAULT 'OPEN',
-  openedAt TIMESTAMP WITH TIME ZONE NOT NULL,
-  closedAt TIMESTAMP WITH TIME ZONE,
-  createdAt TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-  updatedAt TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-);
-CREATE INDEX idx_till_sessions_tenantId ON till_sessions(tenantId);
-CREATE INDEX idx_till_sessions_sessionStatus ON till_sessions(sessionStatus);
-
--- CUSTOMERS
-CREATE TABLE customers (
-  customerId UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  tenantId UUID NOT NULL REFERENCES businesses(tenantId) ON DELETE CASCADE,
-  customerName VARCHAR(255) NOT NULL,
-  phoneNumber VARCHAR(20),
-  emailAddress VARCHAR(255),
-  creditLimit DECIMAL(12, 2) DEFAULT 0,
-  existingDebt DECIMAL(12, 2) DEFAULT 0,
-  createdAt TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-  updatedAt TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-  UNIQUE(tenantId, phoneNumber)
-);
-CREATE INDEX idx_customers_tenantId ON customers(tenantId);
-
--- SALES_TRANSACTIONS
-CREATE TABLE sales_transactions (
-  transactionId UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  tenantId UUID NOT NULL REFERENCES businesses(tenantId) ON DELETE CASCADE,
-  sessionId UUID NOT NULL REFERENCES till_sessions(sessionId) ON DELETE CASCADE,
-  customerId UUID REFERENCES customers(customerId) ON DELETE SET NULL,
-  paymentMethod VARCHAR(50) CHECK (paymentMethod IN ('CASH', 'MPESA', 'DEBT', 'SPLIT')) NOT NULL,
-  paymentStatus VARCHAR(50) CHECK (paymentStatus IN ('PENDING', 'PAID', 'REFUNDED', 'FAILED')) DEFAULT 'PAID',
-  grossTotal DECIMAL(12, 2) NOT NULL,
-  taxAmount DECIMAL(12, 2) DEFAULT 0,
-  discountAmount DECIMAL(12, 2) DEFAULT 0,
-  terminalTimestamp TIMESTAMP WITH TIME ZONE NOT NULL,
-  createdAt TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-  updatedAt TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-);
-CREATE INDEX idx_sales_transactions_tenantId ON sales_transactions(tenantId);
-CREATE INDEX idx_sales_transactions_sessionId ON sales_transactions(sessionId);
-
--- SALE_ITEMS
-CREATE TABLE sale_items (
-  itemId UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  transactionId UUID NOT NULL REFERENCES sales_transactions(transactionId) ON DELETE CASCADE,
-  productId UUID NOT NULL REFERENCES products(productId) ON DELETE CASCADE,
-  quantity INTEGER NOT NULL,
-  unitPrice DECIMAL(12, 2) NOT NULL,
-  totalPrice DECIMAL(12, 2) NOT NULL,
-  createdAt TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-);
-CREATE INDEX idx_sale_items_transactionId ON sale_items(transactionId);
-
--- CUSTOMER_CREDIT_LEDGER
-CREATE TABLE customer_credit_ledger (
-  ledgerId UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  tenantId UUID NOT NULL REFERENCES businesses(tenantId) ON DELETE CASCADE,
-  customerId UUID NOT NULL REFERENCES customers(customerId) ON DELETE CASCADE,
-  transactionId UUID REFERENCES sales_transactions(transactionId) ON DELETE SET NULL,
-  amountDelta DECIMAL(12, 2) NOT NULL,
-  runningBalance DECIMAL(12, 2) NOT NULL,
-  createdAt TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-);
-CREATE INDEX idx_customer_credit_ledger_tenantId ON customer_credit_ledger(tenantId);
-CREATE INDEX idx_customer_credit_ledger_customerId ON customer_credit_ledger(customerId);
-
--- EXPENSES
-CREATE TABLE expenses (
-  expenseId UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  tenantId UUID NOT NULL REFERENCES businesses(tenantId) ON DELETE CASCADE,
-  expenseName VARCHAR(255) NOT NULL,
-  category VARCHAR(100),
-  amount DECIMAL(12, 2) NOT NULL,
-  description TEXT,
-  recordedBy VARCHAR(255),
-  incurredDate DATE NOT NULL,
-  createdAt TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-  updatedAt TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-);
-CREATE INDEX idx_expenses_tenantId ON expenses(tenantId);
-
--- PAYMENT_ALLOCATIONS
-CREATE TABLE payment_allocations (
-  allocationId UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  transactionId UUID NOT NULL REFERENCES sales_transactions(transactionId) ON DELETE CASCADE,
-  allocatedMethod VARCHAR(50) CHECK (allocatedMethod IN ('CASH', 'MPESA', 'DEBT', 'SPLIT')) NOT NULL,
-  allocatedAmount DECIMAL(12, 2) NOT NULL,
-  createdAt TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-);
-CREATE INDEX idx_payment_allocations_transactionId ON payment_allocations(transactionId);
-
--- SYNC_QUEUE
-CREATE TABLE sync_queue (
-  queueId UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  entityType VARCHAR(50) NOT NULL CHECK (entityType IN ('sale', 'inventory_event', 'customer', 'customer_credit', 'expense', 'till_session')),
-  payload JSONB NOT NULL,
-  processed BOOLEAN DEFAULT FALSE,
-  processedAt TIMESTAMP WITH TIME ZONE,
-  createdAt TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-);
-CREATE INDEX idx_sync_queue_processed ON sync_queue(processed);
-
--- BUZZNA_RECORDS (for IndexedDB sync)
-CREATE TABLE buzzna_records (
-  id VARCHAR(255) PRIMARY KEY,
-  table_name VARCHAR(100) NOT NULL,
-  tenant_id VARCHAR(255),
-  data JSONB NOT NULL,
+  country VARCHAR(100),
+  currency VARCHAR(10) DEFAULT 'KES',
+  language VARCHAR(10) DEFAULT 'en',
+  timezone VARCHAR(50) DEFAULT 'Africa/Nairobi',
+  license_status VARCHAR(50) DEFAULT 'TRIAL_ACTIVE',
+  license_expires_at TIMESTAMP WITH TIME ZONE,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
-CREATE INDEX idx_buzzna_records_table_name ON buzzna_records(table_name);
-CREATE INDEX idx_buzzna_records_tenant_id ON buzzna_records(tenant_id);
 
--- ENABLE RLS
+-- ============================================
+-- TABLE: business_settings (Operational Config)
+-- ============================================
+CREATE TABLE IF NOT EXISTS business_settings (
+  tenant_id UUID PRIMARY KEY REFERENCES businesses(tenant_id) ON DELETE CASCADE,
+  chosen_theme VARCHAR(50),
+  brand_color VARCHAR(50),
+  daily_revenue_target NUMERIC(12, 2) DEFAULT 0,
+  weekly_revenue_target NUMERIC(12, 2) DEFAULT 0,
+  monthly_revenue_target NUMERIC(12, 2) DEFAULT 0,
+  daraja_paybill VARCHAR(50),
+  daraja_till_number VARCHAR(50),
+  daraja_api_key VARCHAR(255),
+  eod_time VARCHAR(10),
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- ============================================
+-- TABLE: users (Staff Access Control)
+-- ============================================
+CREATE TABLE IF NOT EXISTS users (
+  user_id UUID PRIMARY KEY,
+  tenant_id UUID NOT NULL REFERENCES businesses(tenant_id) ON DELETE CASCADE,
+  role VARCHAR(50) DEFAULT 'CASHIER',
+  username VARCHAR(255) NOT NULL,
+  phone_number VARCHAR(20),
+  email_address VARCHAR(255),
+  password VARCHAR(255),
+  is_active BOOLEAN DEFAULT TRUE,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  UNIQUE(tenant_id, username)
+);
+
+-- ============================================
+-- TABLE: product_categories (Catalog Organization)
+-- ============================================
+CREATE TABLE IF NOT EXISTS product_categories (
+  category_id UUID PRIMARY KEY,
+  tenant_id UUID NOT NULL REFERENCES businesses(tenant_id) ON DELETE CASCADE,
+  category_name VARCHAR(255) NOT NULL,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  UNIQUE(tenant_id, category_name)
+);
+
+-- ============================================
+-- TABLE: products (Inventory Master)
+-- ============================================
+CREATE TABLE IF NOT EXISTS products (
+  product_id UUID PRIMARY KEY,
+  tenant_id UUID NOT NULL REFERENCES businesses(tenant_id) ON DELETE CASCADE,
+  category_id UUID REFERENCES product_categories(category_id) ON DELETE SET NULL,
+  barcode VARCHAR(100),
+  product_name VARCHAR(255) NOT NULL,
+  cost_floor NUMERIC(12, 2) NOT NULL,
+  retail_price NUMERIC(12, 2) NOT NULL,
+  current_quantity NUMERIC(12, 2) DEFAULT 0,
+  is_serialized BOOLEAN DEFAULT FALSE,
+  expiry_date DATE,
+  supplier_id VARCHAR(255),
+  image_url TEXT,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  UNIQUE(tenant_id, barcode)
+);
+
+-- ============================================
+-- TABLE: inventory_events (Event Sourcing)
+-- ============================================
+CREATE TABLE IF NOT EXISTS inventory_events (
+  event_id UUID PRIMARY KEY,
+  tenant_id UUID NOT NULL REFERENCES businesses(tenant_id) ON DELETE CASCADE,
+  product_id UUID NOT NULL REFERENCES products(product_id) ON DELETE CASCADE,
+  user_id UUID NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+  event_type VARCHAR(50) NOT NULL,
+  quantity_delta NUMERIC(12, 2) NOT NULL,
+  reason_code VARCHAR(100),
+  terminal_timestamp TIMESTAMP WITH TIME ZONE,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- ============================================
+-- TABLE: till_sessions (POS Shift Management)
+-- ============================================
+CREATE TABLE IF NOT EXISTS till_sessions (
+  session_id UUID PRIMARY KEY,
+  tenant_id UUID NOT NULL REFERENCES businesses(tenant_id) ON DELETE CASCADE,
+  user_id UUID NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+  opening_float NUMERIC(12, 2) DEFAULT 0,
+  expected_cash_balance NUMERIC(12, 2) DEFAULT 0,
+  actual_cash_balance NUMERIC(12, 2),
+  session_status VARCHAR(50) DEFAULT 'OPEN',
+  opened_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  closed_at TIMESTAMP WITH TIME ZONE,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- ============================================
+-- TABLE: sales_transactions (POS Checkouts)
+-- ============================================
+CREATE TABLE IF NOT EXISTS sales_transactions (
+  transaction_id UUID PRIMARY KEY,
+  tenant_id UUID NOT NULL REFERENCES businesses(tenant_id) ON DELETE CASCADE,
+  session_id UUID NOT NULL REFERENCES till_sessions(session_id) ON DELETE CASCADE,
+  customer_id UUID REFERENCES customers(customer_id) ON DELETE SET NULL,
+  payment_method VARCHAR(50) DEFAULT 'CASH',
+  payment_status VARCHAR(50) DEFAULT 'PENDING',
+  gross_total NUMERIC(12, 2) NOT NULL,
+  tax_amount NUMERIC(12, 2) DEFAULT 0,
+  discount_amount NUMERIC(12, 2) DEFAULT 0,
+  terminal_timestamp TIMESTAMP WITH TIME ZONE,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- ============================================
+-- TABLE: sale_items (Transaction Line Items)
+-- ============================================
+CREATE TABLE IF NOT EXISTS sale_items (
+  item_id UUID PRIMARY KEY,
+  transaction_id UUID NOT NULL REFERENCES sales_transactions(transaction_id) ON DELETE CASCADE,
+  product_id UUID NOT NULL REFERENCES products(product_id) ON DELETE CASCADE,
+  quantity NUMERIC(12, 2) NOT NULL,
+  unit_price NUMERIC(12, 2) NOT NULL,
+  total_price NUMERIC(12, 2) NOT NULL,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- ============================================
+-- TABLE: payment_allocations (Split Payments)
+-- ============================================
+CREATE TABLE IF NOT EXISTS payment_allocations (
+  allocation_id UUID PRIMARY KEY,
+  transaction_id UUID NOT NULL REFERENCES sales_transactions(transaction_id) ON DELETE CASCADE,
+  allocated_method VARCHAR(50) NOT NULL,
+  allocated_amount NUMERIC(12, 2) NOT NULL,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- ============================================
+-- TABLE: customers (Customer Master)
+-- ============================================
+CREATE TABLE IF NOT EXISTS customers (
+  customer_id UUID PRIMARY KEY,
+  tenant_id UUID NOT NULL REFERENCES businesses(tenant_id) ON DELETE CASCADE,
+  customer_name VARCHAR(255) NOT NULL,
+  phone_number VARCHAR(20),
+  email_address VARCHAR(255),
+  credit_limit NUMERIC(12, 2) DEFAULT 0,
+  existing_debt NUMERIC(12, 2) DEFAULT 0,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- ============================================
+-- TABLE: customer_credit_ledger (Debt Tracking)
+-- ============================================
+CREATE TABLE IF NOT EXISTS customer_credit_ledger (
+  ledger_id UUID PRIMARY KEY,
+  tenant_id UUID NOT NULL REFERENCES businesses(tenant_id) ON DELETE CASCADE,
+  customer_id UUID NOT NULL REFERENCES customers(customer_id) ON DELETE CASCADE,
+  transaction_id UUID REFERENCES sales_transactions(transaction_id) ON DELETE SET NULL,
+  amount_delta NUMERIC(12, 2) NOT NULL,
+  running_balance NUMERIC(12, 2) NOT NULL,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- ============================================
+-- TABLE: expenses (Operational Expenses)
+-- ============================================
+CREATE TABLE IF NOT EXISTS expenses (
+  expense_id UUID PRIMARY KEY,
+  tenant_id UUID NOT NULL REFERENCES businesses(tenant_id) ON DELETE CASCADE,
+  expense_name VARCHAR(255) NOT NULL,
+  amount NUMERIC(12, 2) NOT NULL,
+  category VARCHAR(100),
+  description TEXT,
+  recorded_by UUID REFERENCES users(user_id) ON DELETE SET NULL,
+  incurred_date DATE,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- ============================================
+-- TABLE: buzzna_records (Unified Sync Cache)
+-- ============================================
+CREATE TABLE IF NOT EXISTS buzzna_records (
+  id VARCHAR(255) PRIMARY KEY,
+  table_name VARCHAR(100) NOT NULL,
+  tenant_id UUID,
+  data JSONB NOT NULL,
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- ============================================
+-- INDEXES for Performance
+-- ============================================
+CREATE INDEX IF NOT EXISTS idx_businesses_created_at ON businesses(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_users_tenant_id ON users(tenant_id);
+CREATE INDEX IF NOT EXISTS idx_users_username ON users(username);
+CREATE INDEX IF NOT EXISTS idx_products_tenant_id ON products(tenant_id);
+CREATE INDEX IF NOT EXISTS idx_products_barcode ON products(barcode);
+CREATE INDEX IF NOT EXISTS idx_inventory_events_tenant_id ON inventory_events(tenant_id);
+CREATE INDEX IF NOT EXISTS idx_inventory_events_product_id ON inventory_events(product_id);
+CREATE INDEX IF NOT EXISTS idx_sales_transactions_tenant_id ON sales_transactions(tenant_id);
+CREATE INDEX IF NOT EXISTS idx_sales_transactions_session_id ON sales_transactions(session_id);
+CREATE INDEX IF NOT EXISTS idx_sales_transactions_created_at ON sales_transactions(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_sale_items_transaction_id ON sale_items(transaction_id);
+CREATE INDEX IF NOT EXISTS idx_customers_tenant_id ON customers(tenant_id);
+CREATE INDEX IF NOT EXISTS idx_customer_credit_ledger_customer_id ON customer_credit_ledger(customer_id);
+CREATE INDEX IF NOT EXISTS idx_till_sessions_tenant_id ON till_sessions(tenant_id);
+CREATE INDEX IF NOT EXISTS idx_till_sessions_status ON till_sessions(session_status);
+CREATE INDEX IF NOT EXISTS idx_expenses_tenant_id ON expenses(tenant_id);
+CREATE INDEX IF NOT EXISTS idx_expenses_created_at ON expenses(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_buzzna_records_table_name ON buzzna_records(table_name);
+CREATE INDEX IF NOT EXISTS idx_buzzna_records_tenant_id ON buzzna_records(tenant_id);
+
+-- ============================================
+-- ROW LEVEL SECURITY (Multi-Tenant Isolation)
+-- ============================================
 ALTER TABLE businesses ENABLE ROW LEVEL SECURITY;
 ALTER TABLE business_settings ENABLE ROW LEVEL SECURITY;
 ALTER TABLE users ENABLE ROW LEVEL SECURITY;
@@ -251,26 +257,54 @@ ALTER TABLE inventory_events ENABLE ROW LEVEL SECURITY;
 ALTER TABLE till_sessions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE sales_transactions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE sale_items ENABLE ROW LEVEL SECURITY;
+ALTER TABLE payment_allocations ENABLE ROW LEVEL SECURITY;
 ALTER TABLE customers ENABLE ROW LEVEL SECURITY;
 ALTER TABLE customer_credit_ledger ENABLE ROW LEVEL SECURITY;
 ALTER TABLE expenses ENABLE ROW LEVEL SECURITY;
-ALTER TABLE payment_allocations ENABLE ROW LEVEL SECURITY;
-ALTER TABLE sync_queue ENABLE ROW LEVEL SECURITY;
 ALTER TABLE buzzna_records ENABLE ROW LEVEL SECURITY;
 
--- RLS POLICIES (Allow all for development; add auth.uid() filters in production)
-CREATE POLICY "businesses_allow_all" ON businesses FOR ALL USING (true);
-CREATE POLICY "business_settings_allow_all" ON business_settings FOR ALL USING (true);
-CREATE POLICY "users_allow_all" ON users FOR ALL USING (true);
-CREATE POLICY "product_categories_allow_all" ON product_categories FOR ALL USING (true);
-CREATE POLICY "products_allow_all" ON products FOR ALL USING (true);
-CREATE POLICY "inventory_events_allow_all" ON inventory_events FOR ALL USING (true);
-CREATE POLICY "till_sessions_allow_all" ON till_sessions FOR ALL USING (true);
-CREATE POLICY "sales_transactions_allow_all" ON sales_transactions FOR ALL USING (true);
-CREATE POLICY "sale_items_allow_all" ON sale_items FOR ALL USING (true);
-CREATE POLICY "customers_allow_all" ON customers FOR ALL USING (true);
-CREATE POLICY "customer_credit_ledger_allow_all" ON customer_credit_ledger FOR ALL USING (true);
-CREATE POLICY "expenses_allow_all" ON expenses FOR ALL USING (true);
-CREATE POLICY "payment_allocations_allow_all" ON payment_allocations FOR ALL USING (true);
-CREATE POLICY "sync_queue_allow_all" ON sync_queue FOR ALL USING (true);
-CREATE POLICY "buzzna_records_allow_all" ON buzzna_records FOR ALL USING (true);
+-- ============================================
+-- VIEWS (Business Intelligence)
+-- ============================================
+CREATE OR REPLACE VIEW daily_sales_summary AS
+SELECT
+  st.tenant_id,
+  DATE(st.created_at) as sale_date,
+  COUNT(DISTINCT st.transaction_id) as transaction_count,
+  SUM(st.gross_total) as total_revenue,
+  SUM(st.tax_amount) as total_tax,
+  SUM(st.discount_amount) as total_discounts,
+  AVG(st.gross_total) as avg_transaction_value
+FROM sales_transactions st
+GROUP BY st.tenant_id, DATE(st.created_at)
+ORDER BY sale_date DESC;
+
+CREATE OR REPLACE VIEW product_stock_status AS
+SELECT
+  p.product_id,
+  p.tenant_id,
+  p.product_name,
+  p.current_quantity,
+  p.retail_price,
+  p.cost_floor,
+  (p.retail_price - p.cost_floor) as margin,
+  CASE
+    WHEN p.current_quantity = 0 THEN 'OUT_OF_STOCK'
+    WHEN p.current_quantity < 5 THEN 'LOW_STOCK'
+    WHEN p.expiry_date < CURRENT_DATE THEN 'EXPIRED'
+    ELSE 'IN_STOCK'
+  END as stock_status
+FROM products p;
+
+CREATE OR REPLACE VIEW customer_aging AS
+SELECT
+  c.customer_id,
+  c.tenant_id,
+  c.customer_name,
+  c.existing_debt,
+  c.credit_limit,
+  MAX(ccl.created_at) as last_transaction_date,
+  AGE(CURRENT_DATE, MAX(ccl.created_at)::DATE) as days_since_last_tx
+FROM customers c
+LEFT JOIN customer_credit_ledger ccl ON c.customer_id = ccl.customer_id
+GROUP BY c.customer_id, c.tenant_id, c.customer_name, c.existing_debt, c.credit_limit;

@@ -117,7 +117,7 @@ class SynchronizationEngine {
             const currentStockInDb = await db.recalculateProductQuantity(itemDet.productId);
             
             if (currentStockInDb < 0) {
-              console.warn(`[Walkaway Sync] Product ${itemDetDet.productId} has dropped to negative stock (${currentStockInDb}). Enqueueing attention notice.`);
+              console.warn(`[Walkaway Sync] Product ${itemDet.productId} has dropped to negative stock (${currentStockInDb}). Enqueueing attention notice.`);
               
               const quarantineItem = {
                 quarantineId: 'quar-' + Date.now(),

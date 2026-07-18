@@ -2,7 +2,7 @@
 -- Complete Supabase PostgreSQL Schema with RBAC & RLS
 -- Production-Ready Multi-Tenant Architecture
 -- VERIFIED: All tables, policies, and business logic audited against TypeScript source
--- ============================================
+-- ============================================ 
 -- DROP ALL EXISTING OBJECTS (Clean slate)
 -- ============================================
 

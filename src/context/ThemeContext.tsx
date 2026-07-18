@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { themeManager, ThemeMode, VerticalTheme, ThemeConfig } from '../lib/theme';
 
-interface ThemeContextType {
+interface ThemeContextType { 
   config: ThemeConfig;
   setMode: (mode: ThemeMode) => void;
   setVertical: (vertical: VerticalTheme) => void;

@@ -208,7 +208,20 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     // DIRECT SUPABASE INTEGRATION (Replaces the broken /api/register-onboarding fetch call)
     
-    const { error: bizError } = await supabase.from('businesses').insert([newBusiness]);
+    // DIRECT SUPABASE INTEGRATION
+const { error: bizError } = await supabase.from('businesses').insert([{
+  tenant_id: newBusiness.tenantId,           // Notice the snake_case conversions
+  legal_name: newBusiness.legalName,
+  trade_name: newBusiness.tradeName,
+  industry: newBusiness.industry,
+  country: newBusiness.country,
+  currency: newBusiness.currency,
+  language: newBusiness.language,
+  timezone: newBusiness.timezone,
+  license_status: newBusiness.licenseStatus,
+  license_expires_at: newBusiness.licenseExpiresAt,
+  created_at: newBusiness.createdAt          // Changed from createdAt to created_at
+}]);
     if (bizError) throw new Error(bizError.message || "Failed to initialize business in Cloud.");
 
     const { error: settingsError } = await supabase.from('business_settings').insert([newSettings]);

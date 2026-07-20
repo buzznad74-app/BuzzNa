@@ -13,7 +13,7 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const [isDarkMode, setIsDarkMode] = useState(false);
   const { activeBusiness } = useAuth();
 
-  // Initialize theme from localStorage or system preference
+  // Initialize theme from localStorage or system preference (Default: Light Theme)
   useEffect(() => {
     const savedTheme = localStorage.getItem('theme_display_mode');
     if (savedTheme) {
@@ -21,9 +21,9 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       setIsDarkMode(isDark);
       applyTheme(isDark);
     } else {
-      const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-      setIsDarkMode(prefersDark);
-      applyTheme(prefersDark);
+      // Always default to light mode, ignore system preference
+      setIsDarkMode(false);
+      applyTheme(false);
     }
   }, []);
 

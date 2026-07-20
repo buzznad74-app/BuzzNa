@@ -126,6 +126,23 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     localStorage.removeItem('active_user_id');
   };
 
+  // Validate password strength
+  const validatePassword = (password: string): { valid: boolean; message: string } => {
+    if (password.length < 8) {
+      return { valid: false, message: 'Password must be at least 8 characters long.' };
+    }
+    if (!/[A-Z]/.test(password)) {
+      return { valid: false, message: 'Password must contain at least one uppercase letter.' };
+    }
+    if (!/[a-z]/.test(password)) {
+      return { valid: false, message: 'Password must contain at least one lowercase letter.' };
+    }
+    if (!/[0-9]/.test(password)) {
+      return { valid: false, message: 'Password must contain at least one number.' };
+    }
+    return { valid: true, message: '' };
+  };
+
   // Business registration with direct Supabase integration
   const registerBusiness = async (details: {
     legalName: string;
@@ -140,6 +157,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     ownerEmail?: string;
     password?: string;
   }) => {
+    // Validate password strength
+    if (details.password) {
+      const validation = validatePassword(details.password);
+      if (!validation.valid) {
+        throw new Error(validation.message);
+      }
+    }
+
     const tenantId = generateUUID();
 
     const newBusiness: Business = {
@@ -163,16 +188,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     
     if (ind.includes('butch') || ind.includes('meat')) {
       theme = VerticalTheme.BUTCHERY;
-      brandColor = 'red';
+      brandColor = '#dc2626';
     } else if (ind.includes('mitumba') || ind.includes('cloth') || ind.includes('apparel')) {
       theme = VerticalTheme.MITUMBA;
-      brandColor = 'emerald';
+      brandColor = '#059669';
     } else if (ind.includes('hard') || ind.includes('cement')) {
       theme = VerticalTheme.HARDWARE;
-      brandColor = 'amber';
+      brandColor = '#b45309';
     } else if (ind.includes('cyber') || ind.includes('internet') || ind.includes('service')) {
       theme = VerticalTheme.CYBER;
-      brandColor = 'purple';
+      brandColor = '#7c3aed';
     }
 
     const newSettings: BusinessSettings = {
@@ -212,7 +237,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       license_expires_at: newBusiness.licenseExpiresAt,
       created_at: newBusiness.createdAt
     }]);
-    if (bizError) throw new Error(bizError.message || "Failed to initialize business in Cloud.");
+    if (bizError) throw new Error(bizError.message || 'Failed to initialize business in Cloud.');
 
     const { error: settingsError } = await supabase.from('business_settings').insert([{
       tenant_id: newSettings.tenantId,
@@ -225,7 +250,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       daraja_till_number: newSettings.darajaTillNumber,
       created_at: new Date().toISOString()
     }]);
-    if (settingsError) throw new Error(settingsError.message || "Failed to initialize settings in Cloud.");
+    if (settingsError) throw new Error(settingsError.message || 'Failed to initialize settings in Cloud.');
 
     const { error: ownerError } = await supabase.from('users').insert([{
       user_id: newOwner.userId,
@@ -238,26 +263,35 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       is_active: newOwner.isActive,
       created_at: newOwner.createdAt
     }]);
-    if (ownerError) throw new Error(ownerError.message || "Failed to initialize owner in Cloud.");
+    if (ownerError) throw new Error(ownerError.message || 'Failed to initialize owner in Cloud.');
 
-    // Tell the server to run onboarding hooks (email, welcome messages, etc.)
-    // Preserve existing behaviour: don't fail local registration if server is down
+    // Dispatch onboarding email and welcome messages
     try {
       if (typeof window !== 'undefined') {
-        fetch('/api/register-onboarding', {
+        await fetch('/api/mail/onboarding', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            business: newBusiness,
+            owner: newOwner,
+            recipientEmail: details.ownerEmail,
+            language: details.language
+          })
+        }).catch(err => {
+          console.warn('[Mail] Onboarding email dispatch failed:', err);
+        });
+
+        // Trigger onboarding hooks (SMS, in-app notifications)
+        await fetch('/api/register-onboarding', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ business: newBusiness, settings: newSettings, owner: newOwner, password: details.password })
-        }).then(async (r) => {
-          if (!r.ok) {
-            console.warn('[Onboarding] server onboarding call failed:', await r.text());
-          }
         }).catch(err => {
-          console.warn('[Onboarding] Could not call server onboarding endpoint:', err);
+          console.warn('[Onboarding] Server onboarding call failed:', err);
         });
       }
     } catch (e) {
-      console.warn('[Onboarding] server onboarding invocation skipped:', e);
+      console.warn('[Onboarding] Mailing invocation skipped:', e);
     }
 
     // Commit to local DB

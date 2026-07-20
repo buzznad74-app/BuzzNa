@@ -72,17 +72,17 @@ export const Layout: React.FC<LayoutProps> = ({ children, activeTab, setActiveTa
   // Sync Action Trigger
   const handleForceSync = async () => {
     if (!isOnline) {
-      addToast('Cannot sync: connection is offline!', 'error');
+      addToast(t('sync.offline_error'), 'error');
       return;
     }
-    addToast('Initiating sequence: replicating local changes to cloud...', 'sync');
+    addToast(t('sync.initiating'), 'sync');
     const { successCount, failedCount } = await syncEngine.forceSync();
     if (successCount > 0) {
-      addToast(`Sync Successful: Replicated ${successCount} entries to cloud.`, 'success');
+      addToast(t('sync.success').replace('{count}', successCount.toString()), 'success');
     } else if (failedCount > 0) {
-      addToast(`Sync warning: ${failedCount} entries encountered conflict.`, 'error');
+      addToast(t('sync.conflict').replace('{count}', failedCount.toString()), 'error');
     } else {
-      addToast('Local state is already fully synchronized with Cloud ledger.', 'success');
+      addToast(t('sync.already_synced'), 'success');
     }
   };
 
@@ -93,8 +93,8 @@ export const Layout: React.FC<LayoutProps> = ({ children, activeTab, setActiveTa
     setIsOnline(nextState);
     addToast(
       nextState 
-        ? 'Network Simulated ONLINE. Background sync workers active.' 
-        : 'Network Simulated OFFLINE. All POS sales will execute locally.',
+        ? t('network.online_simulated')
+        : t('network.offline_simulated'),
       nextState ? 'success' : 'error'
     );
   };
@@ -106,47 +106,47 @@ export const Layout: React.FC<LayoutProps> = ({ children, activeTab, setActiveTa
       case 'butchery':
         return {
           bg: 'bg-red-600 hover:bg-red-700 text-white',
-          text: 'text-red-600 dark:text-red-400',
-          border: 'border-red-200 dark:border-red-800',
+          text: 'text-red-600',
+          border: 'border-red-200',
           ring: 'focus:ring-red-500',
           gradient: 'from-red-600 to-rose-700',
-          activeBg: 'bg-red-50 dark:bg-red-950/40 text-red-700 dark:text-red-300'
+          activeBg: 'bg-red-50 text-red-700'
         };
       case 'mitumba':
         return {
           bg: 'bg-emerald-600 hover:bg-emerald-700 text-white',
-          text: 'text-emerald-600 dark:text-emerald-400',
-          border: 'border-emerald-200 dark:border-emerald-800',
+          text: 'text-emerald-600',
+          border: 'border-emerald-200',
           ring: 'focus:ring-emerald-500',
           gradient: 'from-emerald-600 to-teal-700',
-          activeBg: 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300'
+          activeBg: 'bg-emerald-50 text-emerald-700'
         };
       case 'hardware':
         return {
           bg: 'bg-amber-600 hover:bg-amber-700 text-white',
-          text: 'text-amber-600 dark:text-amber-400',
-          border: 'border-amber-200 dark:border-amber-800',
+          text: 'text-amber-600',
+          border: 'border-amber-200',
           ring: 'focus:ring-amber-500',
           gradient: 'from-amber-600 to-orange-700',
-          activeBg: 'bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300'
+          activeBg: 'bg-amber-50 text-amber-700'
         };
       case 'cyber':
         return {
           bg: 'bg-purple-600 hover:bg-purple-700 text-white',
-          text: 'text-purple-600 dark:text-purple-400',
-          border: 'border-purple-200 dark:border-purple-800',
+          text: 'text-purple-600',
+          border: 'border-purple-200',
           ring: 'focus:ring-purple-500',
           gradient: 'from-purple-600 to-fuchsia-700',
-          activeBg: 'bg-purple-50 dark:bg-purple-950/40 text-purple-700 dark:text-purple-300'
+          activeBg: 'bg-purple-50 text-purple-700'
         };
-      default: // Retail Blue
+      default: // Retail Blue 💙
         return {
           bg: 'bg-blue-600 hover:bg-blue-700 text-white',
-          text: 'text-blue-600 dark:text-blue-400',
-          border: 'border-blue-200 dark:border-blue-800',
+          text: 'text-blue-600',
+          border: 'border-blue-200',
           ring: 'focus:ring-blue-500',
           gradient: 'from-blue-600 to-indigo-700',
-          activeBg: 'bg-blue-50 dark:bg-blue-950/40 text-blue-700 dark:text-blue-300'
+          activeBg: 'bg-blue-50 text-blue-700'
         };
     }
   };
@@ -184,31 +184,32 @@ export const Layout: React.FC<LayoutProps> = ({ children, activeTab, setActiveTa
   const trialDays = getTrialDaysRemaining();
 
   return (
-    <div className="min-h-screen flex flex-col bg-white dark:bg-zinc-950 text-zinc-900 dark:text-zinc-100 transition-colors duration-200" id="app-viewport">
+    <div className="min-h-screen flex flex-col bg-white text-zinc-900 transition-colors duration-200" id="app-viewport">
       
       {/* Dynamic Header */}
-      <header className="sticky top-0 z-40 w-full bg-white dark:bg-zinc-900 border-b border-zinc-200 dark:border-zinc-800 shadow-sm px-3 sm:px-4 py-2.5 sm:py-3 flex items-center justify-between" id="app-header">
+      <header className="sticky top-0 z-40 w-full bg-white border-b border-zinc-200 shadow-sm px-3 sm:px-4 py-2.5 sm:py-3 flex items-center justify-between" id="app-header">
         
         {/* Brand Header - Mobile Menu Toggle */}
         <div className="flex items-center gap-2 sm:gap-3 min-w-0">
           <button
             onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-            className="md:hidden p-2 -ml-2 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-lg transition-colors"
+            className="md:hidden p-2 -ml-2 hover:bg-zinc-100 rounded-lg transition-colors"
+            aria-label="Toggle navigation menu"
           >
             {mobileMenuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
           </button>
           <img 
             src="https://res.cloudinary.com/plj6rk0o/image/upload/v1783949717/og-image_rxcpkm.jpg" 
             alt="BuzzNa Logo" 
-            className="w-8 h-8 sm:w-10 sm:h-10 rounded-lg object-cover shadow-md border border-zinc-100 dark:border-zinc-800 flex-shrink-0"
+            className="w-8 h-8 sm:w-10 sm:h-10 rounded-lg object-cover shadow-md border border-zinc-100 flex-shrink-0"
             referrerPolicy="no-referrer"
           />
           <div className="min-w-0">
-            <h1 className="text-xs sm:text-sm font-extrabold tracking-tight uppercase text-zinc-900 dark:text-white flex items-center gap-1.5 leading-none truncate">
+            <h1 className="text-xs sm:text-sm font-extrabold tracking-tight uppercase text-zinc-900 flex items-center gap-1.5 leading-none truncate">
               {activeBusiness?.tradeName || 'BuzzNa D74'}
             </h1>
             <p className="text-[8px] sm:text-[10px] text-zinc-500 font-mono tracking-wider mt-0.5 uppercase leading-none truncate">
-              {businessSettings?.chosenTheme ? `${businessSettings.chosenTheme} vertical` : 'multi-sector OS'}
+              {businessSettings?.chosenTheme ? t('global.vertical').replace('{theme}', businessSettings.chosenTheme) : 'multi-sector OS'}
             </p>
           </div>
         </div>
@@ -218,9 +219,9 @@ export const Layout: React.FC<LayoutProps> = ({ children, activeTab, setActiveTa
           
           {/* Trial Visual countdown card - Hidden on small screens */}
           {trialDays > 0 && (
-            <div className="hidden lg:flex items-center gap-1 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-900 px-2.5 py-1.5 rounded-lg text-amber-800 dark:text-amber-400 text-[10px] font-semibold whitespace-nowrap">
+            <div className="hidden lg:flex items-center gap-1 bg-amber-50 border border-amber-200 px-2.5 py-1.5 rounded-lg text-amber-800 text-xs font-bold">
               <Clock className="w-3 h-3 flex-shrink-0" />
-              <span>{t('global.trial')}: <b>{trialDays} {t('global.days_left')}</b></span>
+              <span>{t('global.trial')}: {trialDays} {t('global.days_left')}</span>
             </div>
           )}
 
@@ -228,15 +229,15 @@ export const Layout: React.FC<LayoutProps> = ({ children, activeTab, setActiveTa
           {syncQueueCount > 0 ? (
             <button 
               onClick={handleForceSync}
-              className="hidden sm:flex items-center gap-1 bg-blue-50 hover:bg-blue-100 dark:bg-blue-950/40 dark:hover:bg-blue-900/60 border border-blue-200 dark:border-blue-900 px-2.5 py-1.5 rounded-lg text-blue-800 dark:text-blue-400 text-[10px] font-semibold hover:shadow-sm transition-all cursor-pointer"
+              className="hidden sm:flex items-center gap-1 bg-blue-50 hover:bg-blue-100 border border-blue-200 px-2.5 py-1.5 rounded-lg text-blue-700 text-xs font-bold transition-colors"
               id="header-sync-queue-btn"
-              title="Force Sync pending events"
+              title={t('tooltip.force_sync')}
             >
               <RefreshCw className={`w-3 h-3 flex-shrink-0 ${isSyncing ? 'animate-spin' : ''}`} />
               <span className="hidden md:inline">{syncQueueCount} {t('global.unsynced')}</span>
             </button>
           ) : (
-            <span className="hidden sm:flex items-center gap-1 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-900 px-2.5 py-1.5 rounded-lg text-emerald-800 dark:text-emerald-400 text-[10px] font-semibold">
+            <span className="hidden sm:flex items-center gap-1 bg-emerald-50 border border-emerald-200 px-2.5 py-1.5 rounded-lg text-emerald-700 text-xs font-bold">
               <RefreshCw className="w-3 h-3 flex-shrink-0" />
               <span className="hidden md:inline">{t('global.synced')}</span>
             </span>
@@ -247,24 +248,24 @@ export const Layout: React.FC<LayoutProps> = ({ children, activeTab, setActiveTa
             onClick={toggleNetworkSimulation}
             className={`p-2 rounded-lg border flex items-center justify-center transition-all cursor-pointer text-sm ${
               isOnline 
-                ? 'bg-emerald-50 border-emerald-200 text-emerald-700 dark:bg-emerald-950/30 dark:border-emerald-900 dark:text-emerald-400 hover:bg-emerald-100' 
-                : 'bg-red-50 border-red-200 text-red-700 dark:bg-red-950/30 dark:border-red-900 dark:text-red-400 hover:bg-red-100'
+                ? 'bg-emerald-50 border-emerald-200 text-emerald-700 hover:bg-emerald-100' 
+                : 'bg-red-50 border-red-200 text-red-700 hover:bg-red-100'
             }`}
             style={{ minWidth: '40px', minHeight: '40px' }}
-            title={isOnline ? 'Simulated Online' : 'Simulated Offline'}
+            title={isOnline ? t('tooltip.online') : t('tooltip.offline')}
             id="network-simulator-toggle"
           >
             {isOnline ? <Wifi className="w-4 h-4" /> : <WifiOff className="w-4 h-4 animate-bounce" />}
           </button>
 
           {/* Language Switcher - Compact */}
-          <div className="flex bg-zinc-100 dark:bg-zinc-800 p-0.5 rounded-lg border border-zinc-200 dark:border-zinc-700" id="lang-switcher">
+          <div className="flex bg-zinc-100 p-0.5 rounded-lg border border-zinc-200" id="lang-switcher">
             <button
               onClick={() => setLanguage('EN')}
               className={`px-2 py-1.5 text-[10px] font-black rounded transition-all cursor-pointer ${
                 language === 'EN'
-                  ? 'bg-white dark:bg-zinc-950 text-zinc-950 dark:text-white shadow-xs'
-                  : 'text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300'
+                  ? 'bg-white text-zinc-950 shadow-xs'
+                  : 'text-zinc-400 hover:text-zinc-600'
               }}`}
               style={{ minHeight: '30px' }}
               title="Switch to English"
@@ -275,8 +276,8 @@ export const Layout: React.FC<LayoutProps> = ({ children, activeTab, setActiveTa
               onClick={() => setLanguage('SW')}
               className={`px-2 py-1.5 text-[10px] font-black rounded transition-all cursor-pointer ${
                 language === 'SW'
-                  ? 'bg-white dark:bg-zinc-950 text-zinc-950 dark:text-white shadow-xs'
-                  : 'text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300'
+                  ? 'bg-white text-zinc-950 shadow-xs'
+                  : 'text-zinc-400 hover:text-zinc-600'
               }`}
               style={{ minHeight: '30px' }}
               title="Badili hadi Kiswahili"
@@ -288,27 +289,27 @@ export const Layout: React.FC<LayoutProps> = ({ children, activeTab, setActiveTa
           {/* Theme display toggler */}
           <button
             onClick={toggleTheme}
-            className="p-2 rounded-lg bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-300 border border-zinc-200 dark:border-zinc-700 transition-all cursor-pointer"
+            className="p-2 rounded-lg bg-zinc-100 hover:bg-zinc-200 text-zinc-700 border border-zinc-200 transition-all"
             style={{ minWidth: '40px', minHeight: '40px' }}
             id="theme-display-mode-toggle"
-            aria-label="Toggle visual contrast theme"
+            aria-label={t('tooltip.toggle_theme')}
           >
             {isDarkMode ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
           </button>
 
           {/* Quick Active user widget - Desktop only */}
-          <div className="hidden lg:flex flex-col text-right ml-2 pr-2 border-r border-zinc-200 dark:border-zinc-800">
-            <span className="text-xs font-bold text-zinc-900 dark:text-zinc-100">{activeUser?.username}</span>
+          <div className="hidden lg:flex flex-col text-right ml-2 pr-2 border-r border-zinc-200">
+            <span className="text-xs font-bold text-zinc-900">{activeUser?.username}</span>
             <span className="text-[10px] text-zinc-500 font-mono tracking-wider">{activeUser?.role}</span>
           </div>
 
           {/* Logout Action */}
           <button
             onClick={logout}
-            className="p-2 rounded-lg hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-950/30 dark:hover:text-red-400 text-zinc-500 border border-transparent transition-all flex items-center justify-center cursor-pointer"
+            className="p-2 rounded-lg hover:bg-red-50 hover:text-red-600 text-zinc-500 border border-transparent transition-all flex items-center justify-center"
             style={{ minWidth: '40px', minHeight: '40px' }}
             id="logout-btn"
-            title="Log out of system"
+            title={t('tooltip.logout')}
           >
             <LogOut className="w-4 h-4" />
           </button>
@@ -321,7 +322,7 @@ export const Layout: React.FC<LayoutProps> = ({ children, activeTab, setActiveTa
         {/* Mobile Menu Drawer */}
         {mobileMenuOpen && (
           <div className="md:hidden fixed inset-0 z-30 bg-black/40 backdrop-blur-xs" onClick={() => setMobileMenuOpen(false)}>
-            <aside className="w-64 bg-white dark:bg-zinc-900 border-r border-zinc-200 dark:border-zinc-800 h-full overflow-y-auto flex flex-col py-3 px-2" onClick={(e) => e.stopPropagation()}>
+            <aside className="w-64 bg-white border-r border-zinc-200 h-full overflow-y-auto flex flex-col py-3 px-2" onClick={(e) => e.stopPropagation()}>
               <div className="flex flex-col gap-1 flex-1">
                 {filteredNavItems.map(item => {
                   const IconComp = item.icon;
@@ -336,7 +337,7 @@ export const Layout: React.FC<LayoutProps> = ({ children, activeTab, setActiveTa
                       className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-semibold transition-all cursor-pointer ${
                         isActive 
                           ? brand.activeBg + ' font-bold shadow-xs' 
-                          : 'text-zinc-600 dark:text-zinc-400 hover:bg-zinc-50 dark:hover:bg-zinc-800'
+                          : 'text-zinc-600 hover:bg-zinc-50'
                       }`}
                       style={{ minHeight: '44px' }}
                       id={`sidebar-nav-${item.id}`}
@@ -347,16 +348,16 @@ export const Layout: React.FC<LayoutProps> = ({ children, activeTab, setActiveTa
                   );
                 })}
               </div>
-              <div className="text-[10px] text-zinc-400 font-mono flex flex-col gap-1 pt-4 border-t border-zinc-100 dark:border-zinc-800">
+              <div className="text-[10px] text-zinc-400 font-mono flex flex-col gap-1 pt-4 border-t border-zinc-100">
                 <div>BuzzNa D74 OS v1.0</div>
-                <div>Support: 0790435584</div>
+                <div>Support: support@buzznad74.com</div>
               </div>
             </aside>
           </div>
         )}
         
         {/* Desktop Sidebar Navigation */}
-        <aside className="hidden md:flex flex-col w-56 lg:w-64 bg-white dark:bg-zinc-900 border-r border-zinc-200 dark:border-zinc-800 py-3 px-2 overflow-y-auto flex-shrink-0 justify-between" id="desktop-sidebar">
+        <aside className="hidden md:flex flex-col w-56 lg:w-64 bg-white border-r border-zinc-200 py-3 px-2 overflow-y-auto flex-shrink-0 justify-between" id="desktop-sidebar">
           <div className="flex flex-col gap-1">
             {filteredNavItems.map(item => {
               const IconComp = item.icon;
@@ -368,7 +369,7 @@ export const Layout: React.FC<LayoutProps> = ({ children, activeTab, setActiveTa
                   className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-lg text-xs sm:text-sm font-semibold transition-all cursor-pointer ${
                     isActive 
                       ? brand.activeBg + ' font-bold shadow-xs' 
-                      : 'text-zinc-600 dark:text-zinc-400 hover:bg-zinc-50 dark:hover:bg-zinc-800'
+                      : 'text-zinc-600 hover:bg-zinc-50'
                   }`}
                   style={{ minHeight: '44px' }}
                   id={`sidebar-nav-${item.id}`}
@@ -379,9 +380,9 @@ export const Layout: React.FC<LayoutProps> = ({ children, activeTab, setActiveTa
               );
             })}
           </div>
-          <div className="text-[10px] text-zinc-400 font-mono flex flex-col gap-1 pt-3 border-t border-zinc-100 dark:border-zinc-800">
+          <div className="text-[10px] text-zinc-400 font-mono flex flex-col gap-1 pt-3 border-t border-zinc-100">
             <div>BuzzNa D74 OS v1.0</div>
-            <div>Support: 0790435584</div>
+            <div>Support: support@buzznad74.com</div>
           </div>
         </aside>
 
@@ -392,7 +393,7 @@ export const Layout: React.FC<LayoutProps> = ({ children, activeTab, setActiveTa
       </div>
 
       {/* Mobile Sticky Footer Navigation Bar */}
-      <nav className="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-white dark:bg-zinc-900 border-t border-zinc-200 dark:border-zinc-800 px-1 py-1 shadow-xl flex items-center justify-around" id="mobile-footer-nav">
+      <nav className="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-white border-t border-zinc-200 px-1 py-1 shadow-xl flex items-center justify-around" id="mobile-footer-nav">
         {filteredNavItems.slice(0, 5).map(item => {
           const IconComp = item.icon;
           const isActive = activeTab === item.id;
@@ -403,7 +404,7 @@ export const Layout: React.FC<LayoutProps> = ({ children, activeTab, setActiveTa
               className={`flex flex-col items-center gap-0.5 p-2 rounded-lg transition-all cursor-pointer ${
                 isActive 
                   ? brand.text + ' font-bold' 
-                  : 'text-zinc-500 dark:text-zinc-400 hover:text-zinc-900'
+                  : 'text-zinc-500 hover:text-zinc-900'
               }`}
               style={{ minWidth: '48px', minHeight: '48px' }}
               id={`mobile-nav-${item.id}`}

@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { ShieldCheck, Wifi, Cpu, Landmark, User, Globe, ArrowRight, ArrowLeft } from 'lucide-react';
+import { ShieldCheck, Wifi, Cpu, Landmark, User, Globe, ArrowRight, ArrowLeft, AlertCircle } from 'lucide-react';
 
 export const Auth: React.FC<{ addToast: (text: string, type: 'success' | 'error') => void }> = ({ addToast }) => {
   const { registerBusiness, login, allUsers } = useAuth();
@@ -38,11 +38,6 @@ export const Auth: React.FC<{ addToast: (text: string, type: 'success' | 'error'
 
     if (!password) {
       addToast('Password is required for credentials security.', 'error');
-      return;
-    }
-
-    if (password.length < 4) {
-      addToast('Password must be at least 4 characters long.', 'error');
       return;
     }
 
@@ -90,12 +85,12 @@ export const Auth: React.FC<{ addToast: (text: string, type: 'success' | 'error'
   // Select seeded user for fast login click (Developer sandbox assist)
   const selectSeededUser = (uname: string) => {
     setLoginUsername(uname);
-    setLoginPass('1234');
-    addToast(`Seeded operator selected: ${uname}`, 'success');
+    setLoginPass('Demo@1234');
+    addToast(`Demo operator selected: ${uname}`, 'success');
   };
 
   return (
-    <div className="min-h-screen bg-zinc-50 flex flex-col justify-between p-4 md:p-6 font-sans text-zinc-900" id="auth-onboarding-container">
+    <div className="min-h-screen bg-white flex flex-col justify-between p-4 md:p-6 font-sans text-zinc-900" id="auth-onboarding-container">
       {/* Upper Brand bar */}
       <header className="max-w-7xl mx-auto w-full flex items-center justify-between py-4">
         <div className="flex items-center gap-2">
@@ -115,7 +110,7 @@ export const Auth: React.FC<{ addToast: (text: string, type: 'success' | 'error'
       </header>
 
       {/* Primary Container card */}
-      <main className="max-w-lg w-full mx-auto my-12 bg-white rounded-3xl shadow-2xl border border-zinc-200 overflow-hidden" id="auth-main-card">
+      <main className="max-w-lg w-full mx-auto my-12 bg-white rounded-3xl shadow-lg border border-zinc-200 overflow-hidden" id="auth-main-card">
         
         {/* Switch Selector Header */}
         <div className="flex border-b border-zinc-100">
@@ -123,7 +118,7 @@ export const Auth: React.FC<{ addToast: (text: string, type: 'success' | 'error'
             onClick={() => { setAuthMode('login'); setStep(1); }}
             className={`flex-1 py-4 text-center font-bold text-sm tracking-wide transition-all uppercase cursor-pointer ${
               authMode === 'login' 
-                ? 'bg-zinc-50 border-b-2 border-indigo-600 text-indigo-700' 
+                ? 'bg-blue-50 border-b-2 border-blue-600 text-blue-700' 
                 : 'text-zinc-500 hover:text-zinc-800'
             }`}
             style={{ minHeight: '48px' }}
@@ -135,7 +130,7 @@ export const Auth: React.FC<{ addToast: (text: string, type: 'success' | 'error'
             onClick={() => setAuthMode('register')}
             className={`flex-1 py-4 text-center font-bold text-sm tracking-wide transition-all uppercase cursor-pointer ${
               authMode === 'register' 
-                ? 'bg-zinc-50 border-b-2 border-indigo-600 text-indigo-700' 
+                ? 'bg-blue-50 border-b-2 border-blue-600 text-blue-700' 
                 : 'text-zinc-500 hover:text-zinc-800'
             }`}
             style={{ minHeight: '48px' }}
@@ -164,7 +159,7 @@ export const Auth: React.FC<{ addToast: (text: string, type: 'success' | 'error'
                     value={loginUsername}
                     onChange={(e) => setLoginUsername(e.target.value)}
                     placeholder="e.g., Mary Kawira"
-                    className="w-full px-4 py-3 rounded-xl border border-zinc-200 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-600 text-sm bg-zinc-50"
+                    className="w-full px-4 py-3 rounded-xl border border-zinc-200 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 text-sm bg-white"
                     id="login-username-input"
                   />
                 </div>
@@ -176,7 +171,7 @@ export const Auth: React.FC<{ addToast: (text: string, type: 'success' | 'error'
                     value={loginPass}
                     onChange={(e) => setLoginPass(e.target.value)}
                     placeholder="Enter till pin code"
-                    className="w-full px-4 py-3 rounded-xl border border-zinc-200 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-600 text-sm bg-zinc-50"
+                    className="w-full px-4 py-3 rounded-xl border border-zinc-200 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 text-sm bg-white"
                     id="login-pin-input"
                   />
                 </div>
@@ -184,13 +179,32 @@ export const Auth: React.FC<{ addToast: (text: string, type: 'success' | 'error'
 
               <button
                 type="submit"
-                className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-sm tracking-wide uppercase py-3.5 rounded-xl shadow-lg transition-all cursor-pointer flex items-center justify-center gap-2"
+                className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold text-sm tracking-wide uppercase py-3.5 rounded-xl shadow-lg transition-all cursor-pointer flex items-center justify-center gap-2"
                 style={{ minHeight: '48px' }}
                 id="login-submit-btn"
               >
                 <span>Authorize Session</span>
                 <ArrowRight className="w-4 h-4" />
               </button>
+
+              {/* Demo Users Quicklinks */}
+              {allUsers.length > 0 && (
+                <div className="pt-4 border-t border-zinc-100">
+                  <p className="text-xs text-zinc-500 font-bold uppercase mb-2">Demo Operators (Sandbox):</p>
+                  <div className="flex flex-wrap gap-2">
+                    {allUsers.slice(0, 3).map(user => (
+                      <button
+                        key={user.userId}
+                        type="button"
+                        onClick={() => selectSeededUser(user.username)}
+                        className="text-xs px-3 py-1.5 rounded-lg bg-zinc-100 hover:bg-blue-100 text-zinc-700 hover:text-blue-700 font-semibold transition-all cursor-pointer border border-zinc-200 hover:border-blue-300"
+                      >
+                        {user.username}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
             </form>
           ) : (
             /* SaaS Wizard Registration */
@@ -213,7 +227,7 @@ export const Auth: React.FC<{ addToast: (text: string, type: 'success' | 'error'
                         value={legalName}
                         onChange={(e) => { setLegalName(e.target.value); if (!tradeName) setTradeName(e.target.value); }}
                         placeholder="e.g., Kamau Butcheries Ltd"
-                        className="w-full px-4 py-3 rounded-xl border border-zinc-200 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-600 text-sm bg-zinc-50"
+                        className="w-full px-4 py-3 rounded-xl border border-zinc-200 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 text-sm bg-white"
                       />
                     </div>
 
@@ -224,7 +238,7 @@ export const Auth: React.FC<{ addToast: (text: string, type: 'success' | 'error'
                         value={tradeName}
                         onChange={(e) => setTradeName(e.target.value)}
                         placeholder="e.g., Kamau Butchery"
-                        className="w-full px-4 py-3 rounded-xl border border-zinc-200 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-600 text-sm bg-zinc-50"
+                        className="w-full px-4 py-3 rounded-xl border border-zinc-200 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 text-sm bg-white"
                       />
                     </div>
 
@@ -234,7 +248,7 @@ export const Auth: React.FC<{ addToast: (text: string, type: 'success' | 'error'
                         <select
                           value={industry}
                           onChange={(e) => setIndustry(e.target.value)}
-                          className="w-full px-3 py-3 rounded-xl border border-zinc-200 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-600 text-sm bg-zinc-50"
+                          className="w-full px-3 py-3 rounded-xl border border-zinc-200 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 text-sm bg-white"
                         >
                           <option value="Retail General">General Retail</option>
                           <option value="Butchery Meat">Butchery Shop</option>
@@ -249,7 +263,7 @@ export const Auth: React.FC<{ addToast: (text: string, type: 'success' | 'error'
                         <select
                           value={country}
                           onChange={(e) => setCountry(e.target.value)}
-                          className="w-full px-3 py-3 rounded-xl border border-zinc-200 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-600 text-sm bg-zinc-50"
+                          className="w-full px-3 py-3 rounded-xl border border-zinc-200 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 text-sm bg-white"
                         >
                           <option value="Kenya">Kenya (KES)</option>
                           <option value="Tanzania">Tanzania (TZS)</option>
@@ -268,7 +282,7 @@ export const Auth: React.FC<{ addToast: (text: string, type: 'success' | 'error'
                       }
                       setStep(2);
                     }}
-                    className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-sm tracking-wide uppercase py-3.5 rounded-xl shadow-lg transition-all flex items-center justify-center gap-2 cursor-pointer"
+                    className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold text-sm tracking-wide uppercase py-3.5 rounded-xl shadow-lg transition-all flex items-center justify-center gap-2"
                     style={{ minHeight: '48px' }}
                   >
                     <span>Proceed to Owner Setup</span>
@@ -281,7 +295,7 @@ export const Auth: React.FC<{ addToast: (text: string, type: 'success' | 'error'
               {step === 2 && (
                 <div className="space-y-5" id="wizard-step-2">
                   <div className="text-center mb-4">
-                    <h2 className="text-lg font-extrabold tracking-tight text-zinc-950 uppercase">Owner credentials</h2>
+                    <h2 className="text-lg font-extrabold tracking-tight text-zinc-950 uppercase">Owner Credentials</h2>
                     <p className="text-xs text-zinc-500 mt-1">Specify credentials for the principal administrator</p>
                   </div>
 
@@ -294,7 +308,7 @@ export const Auth: React.FC<{ addToast: (text: string, type: 'success' | 'error'
                         value={ownerName}
                         onChange={(e) => setOwnerName(e.target.value)}
                         placeholder="e.g., Mary Kawira"
-                        className="w-full px-4 py-3 rounded-xl border border-zinc-200 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-600 text-sm bg-zinc-50"
+                        className="w-full px-4 py-3 rounded-xl border border-zinc-200 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 text-sm bg-white"
                       />
                     </div>
 
@@ -306,7 +320,7 @@ export const Auth: React.FC<{ addToast: (text: string, type: 'success' | 'error'
                         value={ownerPhone}
                         onChange={(e) => setOwnerPhone(e.target.value)}
                         placeholder="e.g., +254790435584"
-                        className="w-full px-4 py-3 rounded-xl border border-zinc-200 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-600 text-sm bg-zinc-50"
+                        className="w-full px-4 py-3 rounded-xl border border-zinc-200 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 text-sm bg-white"
                       />
                     </div>
 
@@ -318,8 +332,23 @@ export const Auth: React.FC<{ addToast: (text: string, type: 'success' | 'error'
                         value={ownerEmail}
                         onChange={(e) => setOwnerEmail(e.target.value)}
                         placeholder="e.g., mary@gmail.com"
-                        className="w-full px-4 py-3 rounded-xl border border-zinc-200 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-600 text-sm bg-zinc-50"
+                        className="w-full px-4 py-3 rounded-xl border border-zinc-200 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 text-sm bg-white"
                       />
+                    </div>
+
+                    <div className="space-y-2 p-3 bg-amber-50 border border-amber-200 rounded-xl">
+                      <div className="flex items-start gap-2">
+                        <AlertCircle className="w-4 h-4 text-amber-700 mt-0.5 flex-shrink-0" />
+                        <div className="text-[11px] text-amber-800">
+                          <p className="font-bold">Password Requirements:</p>
+                          <ul className="mt-1 space-y-0.5 text-[10px]">
+                            <li>• At least 8 characters</li>
+                            <li>• One uppercase letter</li>
+                            <li>• One lowercase letter</li>
+                            <li>• One number</li>
+                          </ul>
+                        </div>
+                      </div>
                     </div>
 
                     <div className="grid grid-cols-2 gap-4">
@@ -330,8 +359,8 @@ export const Auth: React.FC<{ addToast: (text: string, type: 'success' | 'error'
                           required
                           value={password}
                           onChange={(e) => setPassword(e.target.value)}
-                          placeholder="••••"
-                          className="w-full px-4 py-3 rounded-xl border border-zinc-200 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-600 text-sm bg-zinc-50"
+                          placeholder="••••••••"
+                          className="w-full px-4 py-3 rounded-xl border border-zinc-200 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 text-sm bg-white"
                         />
                       </div>
                       <div>
@@ -341,14 +370,14 @@ export const Auth: React.FC<{ addToast: (text: string, type: 'success' | 'error'
                           required
                           value={confirmPassword}
                           onChange={(e) => setConfirmPassword(e.target.value)}
-                          placeholder="••••"
-                          className="w-full px-4 py-3 rounded-xl border border-zinc-200 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-600 text-sm bg-zinc-50"
+                          placeholder="••••••••"
+                          className="w-full px-4 py-3 rounded-xl border border-zinc-200 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 text-sm bg-white"
                         />
                       </div>
                     </div>
                   </div>
 
-                  <div className="flex gap-4">
+                  <div className="flex gap-3 pt-2">
                     <button
                       type="button"
                       onClick={() => setStep(1)}
@@ -360,7 +389,7 @@ export const Auth: React.FC<{ addToast: (text: string, type: 'success' | 'error'
                     </button>
                     <button
                       type="submit"
-                      className="flex-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs tracking-wide uppercase py-3 rounded-xl shadow-lg transition-all cursor-pointer flex items-center justify-center gap-1"
+                      className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs tracking-wide uppercase py-3 rounded-xl shadow-lg transition-all cursor-pointer flex items-center justify-center gap-2"
                       style={{ minHeight: '48px' }}
                     >
                       <ShieldCheck className="w-4 h-4" />
@@ -379,10 +408,10 @@ export const Auth: React.FC<{ addToast: (text: string, type: 'success' | 'error'
       {/* Footer Branding & help tags */}
       <footer className="max-w-7xl mx-auto w-full text-center py-6 border-t border-zinc-200 mt-6">
         <p className="text-xs text-zinc-500">
-          BuzzNa D74 Cloud OS is secured with end-to-end multi-tenant RLS guards. 
+          BuzzNa D74 Cloud OS is secured with end-to-end multi-tenant Row-Level Security guards. 
         </p>
         <p className="text-[10px] text-zinc-400 font-mono mt-1">
-          Support center: buzznad74@gmail.com | WhatsApp: +254790435584 | +254790435584
+          Support: support@buzznad74.com | WhatsApp: +254790435584 | Email: buzznad74@gmail.com
         </p>
       </footer>
     </div>

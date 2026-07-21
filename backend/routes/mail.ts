@@ -4,7 +4,7 @@
  */
 
 import { Router, Request, Response } from 'express';
-import nodemailer from 'nodemailer';
+import nodemailer from 'nodemailer'; 
 import { Business, User } from '../types';
 
 const router = Router();

@@ -81,6 +81,26 @@ export const Dashboard: React.FC<{ addToast: Toast }> = ({ addToast }) => {
     }
   };
 
+  // Manual / programmatic sync trigger (visible in UI)
+  const triggerSync = async () => {
+    try {
+      const payload = { tenantId: (activeBusiness as any)?.tenantId };
+      if (typeof navigator !== 'undefined' && !navigator.onLine) {
+        localStorage.setItem('pending_sync_request', JSON.stringify(payload));
+        addToast(t('sync.queued', 'Offline: sync queued and will run when online.'), 'info');
+        return;
+      }
+      const res = await apiClient.post('/api/sync/trigger', payload);
+      addToast(t('sync.ok', 'Sync completed.'), 'success');
+      // refresh local view after sync
+      fetchDashboardData();
+    } catch (err: any) {
+      console.warn('[Dashboard] sync error:', err);
+      addToast(t('sync.err', 'Sync failed; queued for retry.'), 'error');
+      localStorage.setItem('pending_sync_request', JSON.stringify({ tenantId: (activeBusiness as any)?.tenantId }));
+    }
+  };
+
   // ---- AI forecast (preserved offline queue + RBAC gate) ----
   const generateAIForecast = async () => {
     if (!canRunAI) {
@@ -203,6 +223,16 @@ export const Dashboard: React.FC<{ addToast: Toast }> = ({ addToast }) => {
         <p className="text-[11px] text-zinc-500 dark:text-zinc-400 mt-0.5">
           {t('dashboard.subtitle', 'Overview & quick actions')}
         </p>
+        {/* Visible Sync button to comply with Sync Mechanisms requirement */}
+        <div className="mt-2">
+          <button
+            className="text-[11px] px-2.5 py-1 rounded-md shadow-sm border transition
+                       bg-white dark:bg-zinc-900 text-[color:var(--brand)] border-[color:var(--brand)]/30 hover:bg-[color:var(--brand)]/10"
+            onClick={() => { if (!canRefresh) { addToast(t('rbac.err.refresh','You do not have permission to refresh.'),'error'); return; } triggerSync(); }}
+          >
+            {t('dashboard.quick.sync', 'Sync Now')}
+          </button>
+        </div>
       </div>
 
       {/* KPI grid — compact, 2 cols mobile, 4 cols desktop */}
@@ -291,3 +321,4 @@ export const Dashboard: React.FC<{ addToast: Toast }> = ({ addToast }) => {
 };
 
 export default Dashboard;
+                                                                               

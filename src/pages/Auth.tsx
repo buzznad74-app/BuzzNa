@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useI18n } from '../hooks/useI18n';
 import { useTheme } from '../hooks/useTheme';
@@ -14,6 +14,23 @@ export const Auth: React.FC<{ addToast: Toast }> = ({ addToast }) => {
   const { registerBusiness, login, allUsers } = useAuth();
   const { t, dir } = useI18n();
   const { theme, toggleTheme, primaryColor, logoUrl } = useTheme();
+
+  // small helper: call server sync endpoint; queues when offline
+  const triggerSync = async (tenantId?: string) => {
+    try {
+      const payload = { tenantId };
+      if (typeof navigator !== 'undefined' && !navigator.onLine) {
+        localStorage.setItem('pending_sync_request', JSON.stringify(payload));
+        addToast(t('sync.queued', 'Offline: sync queued and will run when online.'), 'info');
+        return;
+      }
+      await apiClient.post('/api/sync/trigger', payload);
+      addToast(t('sync.ok', 'Sync completed.'), 'success');
+    } catch (err: any) {
+      console.warn('[Auth] sync trigger failed:', err);
+      localStorage.setItem('pending_sync_request', JSON.stringify({ tenantId }));
+    }
+  };
 
   // Tab selector: 'login' | 'register'
   const [authMode, setAuthMode] = useState<'login' | 'register'>('login');
@@ -70,6 +87,8 @@ export const Auth: React.FC<{ addToast: Toast }> = ({ addToast }) => {
       });
 
       addToast(t('auth.ok.onboarded', 'Onboarding Complete: Brand registered and synced to cloud!'), 'success');
+      // Force a background sync after a successful onboarding to ensure Supabase/cloud is in sync
+      try { await triggerSync((registered as any)?.tenantId || undefined); } catch { /* best-effort */ }
 
       // --- Mailing: welcome + business activation confirmation ---
       // Fire-and-forget so slow SMTP never blocks the UI; offline goes to queue.
@@ -113,10 +132,33 @@ export const Auth: React.FC<{ addToast: Toast }> = ({ addToast }) => {
     const success = await login(loginUsername, loginPass);
     if (success) {
       addToast(t('auth.ok.welcomeBack', 'Welcome back, {name}! Till session active.').replace('{name}', loginUsername), 'success');
+      // Force immediate sync after login to enforce session & till security (spec requirement)
+      try { await triggerSync((await (window as any).__ACTIVE_BUSINESS_TENANT__ ) || undefined); } catch { /* best-effort */ }
     } else {
       addToast(t('auth.err.badCredentials', 'Staff credentials mismatch or database context error.'), 'error');
     }
   };
+
+  // Try to process pending sync requests when connectivity is restored
+  useEffect(() => {
+    const tryPendingSync = async () => {
+      try {
+        const pending = localStorage.getItem('pending_sync_request');
+        if (!pending) return;
+        if (typeof navigator !== 'undefined' && !navigator.onLine) return;
+        const payload = JSON.parse(pending);
+        await apiClient.post('/api/sync/trigger', payload);
+        localStorage.removeItem('pending_sync_request');
+        addToast(t('sync.retryOk', 'Queued sync processed successfully.'), 'success');
+      } catch (err) {
+        console.warn('[Auth] retry pending sync error:', err);
+      }
+    };
+    const handleOnline = () => tryPendingSync();
+    window.addEventListener('online', handleOnline);
+    tryPendingSync();
+    return () => window.removeEventListener('online', handleOnline);
+  }, [t]);
 
   // Seeded user quicklinks (preserved sandbox helper)
   const selectSeededUser = (uname: string) => {

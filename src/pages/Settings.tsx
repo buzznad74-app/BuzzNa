@@ -4,6 +4,7 @@ import { db, generateUUID } from '../lib/db';
 import { User, VerticalTheme } from '../types';
 import { Save, UserPlus, KeyRound, Palette, Sparkles, CreditCard, MailOpen, HelpCircle } from 'lucide-react';
 import { validateOfflineKey } from '../lib/license';
+import { apiClient } from '../lib/apiClient';
 
 export const Settings: React.FC<{ addToast: (text: string, type: 'success' | 'error' | 'info' | 'sync') => void }> = ({ addToast }) => {
   const { activeBusiness, businessSettings, updateSettings, setThemeAndColor, allUsers, activeUser, updateBusiness, language, setLanguage, t } = useAuth();
@@ -79,9 +80,24 @@ export const Settings: React.FC<{ addToast: (text: string, type: 'success' | 'er
   // Handle saving visual brand settings
   const handleSaveBranding = async (e: React.FormEvent) => {
     e.preventDefault();
+    // RBAC: Managers must NOT be able to change global branding/owner-level settings
+    if (activeUser?.role === 'MANAGER' && activeUser?.role !== 'OWNER') {
+      addToast('Permission denied: Managers cannot change global branding.', 'error');
+      return;
+    }
     try {
       await setThemeAndColor(theme, brandColor);
       addToast('Branding updated! Interactive visual elements compiled.', 'success');
+      // attempt sync of branding change to server
+      try {
+        const payload = { tenantId: activeBusiness?.tenantId, branding: { theme, brandColor } };
+        if (typeof navigator !== 'undefined' && !navigator.onLine) {
+          localStorage.setItem('pending_sync_request', JSON.stringify(payload));
+          addToast('Offline: Branding update queued for sync.', 'info');
+        } else {
+          await apiClient.post('/api/sync/trigger', payload);
+        }
+      } catch { /* non-fatal */ }
     } catch (err: any) {
       addToast(err.message || 'Branding update failed.', 'error');
     }
@@ -98,6 +114,16 @@ export const Settings: React.FC<{ addToast: (text: string, type: 'success' | 'er
         eodTime: eodTime
       });
       addToast('Operational revenue targets updated.', 'success');
+      // push settings change to sync endpoint
+      try {
+        const payload = { tenantId: activeBusiness?.tenantId, settings: { dailyTarget, weeklyTarget, monthlyTarget, eodTime } };
+        if (typeof navigator !== 'undefined' && !navigator.onLine) {
+          localStorage.setItem('pending_sync_request', JSON.stringify(payload));
+          addToast('Offline: Settings update queued for sync.', 'info');
+        } else {
+          await apiClient.post('/api/sync/trigger', payload);
+        }
+      } catch { /* non-fatal */ }
     } catch (err: any) {
       addToast(err.message || 'Financial targets update failed.', 'error');
     }
@@ -405,7 +431,7 @@ export const Settings: React.FC<{ addToast: (text: string, type: 'success' | 'er
                   />
                 </div>
 
-                <div className="space-y-2">
+                 <div className="space-y-2">
                   <label className="block text-xs font-bold uppercase text-zinc-600 dark:text-zinc-400">Monthly Target (KES)</label>
                   <input
                     type="number"
@@ -642,8 +668,7 @@ export const Settings: React.FC<{ addToast: (text: string, type: 'success' | 'er
                       </h4>
                     </div>
                   </div>
-
-                  {/* Payment Form Segment */}
+                    {/* Payment Form Segment */}
                   <div className="bg-zinc-50 dark:bg-zinc-950/80 p-6 rounded-3xl border border-zinc-200/50 dark:border-zinc-800/60 flex flex-col md:flex-row md:items-center justify-between gap-8">
                     <div className="space-y-2 max-w-md">
                       <span className="text-[10px] font-mono font-bold uppercase text-indigo-600 dark:text-indigo-400 tracking-wider">Upgrade System License</span>

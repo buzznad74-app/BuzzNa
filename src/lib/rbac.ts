@@ -27,3 +27,5 @@ export function hasRole(user: User | null | undefined, ...allowedRoles: Array<st
 export const isOwner = (user?: User | null) => hasRole(user, 'OWNER');
 export const isManager = (user?: User | null) => hasRole(user, 'MANAGER');
 export const isCashier = (user?: User | null) => hasRole(user, 'CASHIER');
+
+export default { hasRole, isOwner, isManager, isCashier };

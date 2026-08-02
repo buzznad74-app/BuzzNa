@@ -33,7 +33,6 @@ export const Dashboard: React.FC<{ addToast: Toast }> = ({ addToast }) => {
   const canRunAI = hasRole(currentUser, 'owner', 'manager');
   const canRefresh = hasRole(currentUser, 'owner', 'manager', 'cashier');
 
-  // ---- Offline-first load (preserved) ----
   const fetchDashboardData = async () => {
     try {
       setLoading(true);
@@ -55,7 +54,6 @@ export const Dashboard: React.FC<{ addToast: Toast }> = ({ addToast }) => {
       const gross = tenantSales.reduce((sum, s) => sum + (s.grossTotal || 0), 0);
       setGrossSales(gross);
 
-      // Activation milestone mailer (fires once per tenant when first tx recorded)
       if (
         tenantSales.length > 0 &&
         activeBusiness?.tenantId &&
@@ -81,7 +79,6 @@ export const Dashboard: React.FC<{ addToast: Toast }> = ({ addToast }) => {
     }
   };
 
-  // Manual / programmatic sync trigger (visible in UI)
   const triggerSync = async () => {
     try {
       const payload = { tenantId: (activeBusiness as any)?.tenantId };
@@ -90,9 +87,8 @@ export const Dashboard: React.FC<{ addToast: Toast }> = ({ addToast }) => {
         addToast(t('sync.queued', 'Offline: sync queued and will run when online.'), 'info');
         return;
       }
-      const res = await apiClient.post('/api/sync/trigger', payload);
+      await apiClient.post('/api/sync/trigger', payload);
       addToast(t('sync.ok', 'Sync completed.'), 'success');
-      // refresh local view after sync
       fetchDashboardData();
     } catch (err: any) {
       console.warn('[Dashboard] sync error:', err);
@@ -101,7 +97,6 @@ export const Dashboard: React.FC<{ addToast: Toast }> = ({ addToast }) => {
     }
   };
 
-  // ---- AI forecast (preserved offline queue + RBAC gate) ----
   const generateAIForecast = async () => {
     if (!canRunAI) {
       addToast(t('rbac.err.forecast', 'You do not have permission to run AI forecasts.'), 'error');
@@ -148,7 +143,6 @@ export const Dashboard: React.FC<{ addToast: Toast }> = ({ addToast }) => {
     }
   };
 
-  // ---- Retry queued forecast on reconnect (preserved) ----
   useEffect(() => {
     const tryPendingForecast = async () => {
       try {
@@ -169,15 +163,12 @@ export const Dashboard: React.FC<{ addToast: Toast }> = ({ addToast }) => {
           setAiForecast(data?.forecast || null);
           localStorage.removeItem('pending_forecast_request');
           addToast(t('dashboard.ai.retryOk', 'Queued forecast processed successfully.'), 'success');
-        } else {
-          console.warn('[Dashboard] queued forecast failed:', await res.text());
         }
       } catch (err) {
         console.warn('[Dashboard] retry pending forecast error:', err);
       }
     };
 
-    // Retry queued welcome email (from Auth flow)
     const tryPendingWelcome = async () => {
       const pending = localStorage.getItem('pending_welcome_email');
       if (!pending || (typeof navigator !== 'undefined' && !navigator.onLine)) return;
@@ -192,9 +183,8 @@ export const Dashboard: React.FC<{ addToast: Toast }> = ({ addToast }) => {
     tryPendingForecast(); tryPendingWelcome();
 
     return () => window.removeEventListener('online', handleOnline);
-  }, [activeBusiness, t]);
+  }, [activeBusiness, t, addToast]);
 
-  // ---- Live IndexedDB subscription (preserved) ----
   useEffect(() => {
     fetchDashboardData();
     const unsub = db.subscribe(fetchDashboardData);
@@ -223,7 +213,6 @@ export const Dashboard: React.FC<{ addToast: Toast }> = ({ addToast }) => {
         <p className="text-[11px] text-zinc-500 dark:text-zinc-400 mt-0.5">
           {t('dashboard.subtitle', 'Overview & quick actions')}
         </p>
-        {/* Visible Sync button to comply with Sync Mechanisms requirement */}
         <div className="mt-2">
           <button
             className="text-[11px] px-2.5 py-1 rounded-md shadow-sm border transition
@@ -235,7 +224,6 @@ export const Dashboard: React.FC<{ addToast: Toast }> = ({ addToast }) => {
         </div>
       </div>
 
-      {/* KPI grid — compact, 2 cols mobile, 4 cols desktop */}
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 mb-3">
         {kpis.map(({ key, label, value, Icon }) => (
           <div key={key} className={cardCls}>
@@ -253,7 +241,6 @@ export const Dashboard: React.FC<{ addToast: Toast }> = ({ addToast }) => {
       </div>
 
       <div className="space-y-2">
-        {/* AI Forecast */}
         <div className={cardCls}>
           <div className="flex items-center justify-between gap-2 mb-2">
             <h3 className="text-xs font-bold flex items-center gap-1.5 text-zinc-900 dark:text-zinc-100">
@@ -280,7 +267,6 @@ export const Dashboard: React.FC<{ addToast: Toast }> = ({ addToast }) => {
           )}
         </div>
 
-        {/* Quick Actions */}
         <div className={cardCls}>
           <h4 className="text-xs font-bold mb-2 text-zinc-900 dark:text-zinc-100">
             {t('dashboard.quick.title', 'Quick Actions')}
@@ -321,4 +307,4 @@ export const Dashboard: React.FC<{ addToast: Toast }> = ({ addToast }) => {
 };
 
 export default Dashboard;
-                                                                               
+      

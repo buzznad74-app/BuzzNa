@@ -73,6 +73,7 @@ class AppDatabase {
             if (store === 'products') os.createIndex('tenantId', 'tenantId');
             if (store === 'sales_transactions') os.createIndex('tenantId', 'tenantId');
             if (store === 'customers') os.createIndex('tenantId', 'tenantId');
+            if (store === 'users') os.createIndex('tenantId', 'tenantId');
           }
         });
       };
@@ -80,7 +81,7 @@ class AppDatabase {
       request.onsuccess = (event) => {
         this.db = (event.target as IDBOpenDBRequest).result;
         this.seedInitialData();
-        this.syncFromSupabase().catch(err => console.warn(err));
+        this.syncFromSupabase().catch(err => console.warn('[DB] Initial sync failed:', err));
         resolve(this.db);
       };
 
@@ -191,9 +192,9 @@ class AppDatabase {
             data: item,
             updated_at: new Date().toISOString()
           }, { onConflict: 'id' })
-          .catch(err => console.warn(`Supabase sync failed for ${storeName}:`, err));
+          .catch(err => console.warn(`[DB] Supabase sync failed for ${storeName}:`, err));
       } catch (e) {
-        console.warn(e);
+        console.warn('[DB] Error queuing Supabase sync:', e);
       }
     }
   }
@@ -215,9 +216,9 @@ class AppDatabase {
           .delete()
           .eq('id', id)
           .eq('table_name', storeName)
-          .catch(err => console.warn(`Supabase delete sync failed for ${storeName}:`, err));
+          .catch(err => console.warn(`[DB] Supabase delete sync failed for ${storeName}:`, err));
       } catch (e) {
-        console.warn(e);
+        console.warn('[DB] Error queuing Supabase delete:', e);
       }
     }
   }
@@ -233,6 +234,10 @@ class AppDatabase {
     this.notifyListeners();
   }
 
+  /**
+   * Sync all data from Supabase to local IndexedDB.
+   * Called on startup and when attempting to load session data.
+   */
   public async syncFromSupabase(): Promise<void> {
     const syncStores = [
       'businesses',
@@ -250,6 +255,7 @@ class AppDatabase {
     ];
 
     try {
+      console.log('[DB] Starting sync from Supabase...');
       for (const store of syncStores) {
         try {
           const { data, error } = await supabase
@@ -258,7 +264,7 @@ class AppDatabase {
             .eq('table_name', store);
 
           if (error) {
-            console.warn(`Supabase query error for ${store}:`, error);
+            console.warn(`[DB] Supabase query error for ${store}:`, error);
             continue;
           }
 
@@ -279,15 +285,108 @@ class AppDatabase {
                 req.onerror = () => rej(req.error);
               });
             }
+            console.log(`[DB] Synced ${items.length} records for ${store}`);
           }
         } catch (storeErr) {
-          console.warn(`Error syncing store ${store}:`, storeErr);
+          console.warn(`[DB] Error syncing store ${store}:`, storeErr);
         }
       }
       this.notifyListeners();
-      console.log('Sync complete');
+      console.log('[DB] Sync complete');
     } catch (err) {
-      console.warn('Sync failed:', err);
+      console.warn('[DB] Sync failed:', err);
+    }
+  }
+
+  /**
+   * Sync specific tenant's users and business data from Supabase.
+   * Used after successful login to ensure local cache is up-to-date.
+   */
+  public async syncTenantDataFromSupabase(tenantId: string): Promise<void> {
+    try {
+      console.log(`[DB] Syncing tenant data for ${tenantId} from Supabase...`);
+
+      // Sync users for this tenant
+      const { data: usersData, error: usersError } = await supabase
+        .from('users')
+        .select('*')
+        .eq('tenant_id', tenantId);
+
+      if (!usersError && usersData) {
+        const usersStore = await this.getStore('users', 'readwrite');
+        for (const user of usersData) {
+          const convertedUser: User = {
+            userId: user.user_id,
+            tenantId: user.tenant_id,
+            role: user.role,
+            username: user.username,
+            phoneNumber: user.phone_number,
+            emailAddress: user.email_address,
+            password: user.password,
+            isActive: user.is_active,
+            createdAt: user.created_at,
+          };
+          await new Promise<void>((res, rej) => {
+            const req = usersStore.put(convertedUser);
+            req.onsuccess = () => res();
+            req.onerror = () => rej(req.error);
+          });
+        }
+        console.log(`[DB] Synced ${usersData.length} users for tenant ${tenantId}`);
+      }
+
+      // Sync business
+      const { data: businessData, error: businessError } = await supabase
+        .from('businesses')
+        .select('*')
+        .eq('tenant_id', tenantId)
+        .single();
+
+      if (!businessError && businessData) {
+        const business: Business = {
+          tenantId: businessData.tenant_id,
+          legalName: businessData.legal_name,
+          tradeName: businessData.trade_name,
+          industry: businessData.industry,
+          country: businessData.country,
+          currency: businessData.currency,
+          language: businessData.language,
+          timezone: businessData.timezone,
+          licenseStatus: businessData.license_status,
+          licenseExpiresAt: businessData.license_expires_at,
+          createdAt: businessData.created_at,
+        };
+        await this.put('businesses', business);
+        console.log(`[DB] Synced business ${tenantId}`);
+      }
+
+      // Sync business settings
+      const { data: settingsData, error: settingsError } = await supabase
+        .from('business_settings')
+        .select('*')
+        .eq('tenant_id', tenantId)
+        .single();
+
+      if (!settingsError && settingsData) {
+        const settings: BusinessSettings = {
+          tenantId: settingsData.tenant_id,
+          chosenTheme: settingsData.chosen_theme,
+          brandColor: settingsData.brand_color,
+          dailyRevenueTarget: settingsData.daily_revenue_target,
+          weeklyRevenueTarget: settingsData.weekly_revenue_target,
+          monthlyRevenueTarget: settingsData.monthly_revenue_target,
+          darajaPaybill: settingsData.daraja_paybill,
+          darajaTillNumber: settingsData.daraja_till_number,
+          eodTime: settingsData.eod_time,
+        };
+        await this.put('business_settings', settings);
+        console.log(`[DB] Synced business settings for ${tenantId}`);
+      }
+
+      this.notifyListeners();
+      console.log(`[DB] Tenant data sync complete for ${tenantId}`);
+    } catch (err) {
+      console.warn(`[DB] Tenant data sync failed for ${tenantId}:`, err);
     }
   }
 

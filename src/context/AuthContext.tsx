@@ -59,35 +59,45 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   // Load initial session on startup
   useEffect(() => {
     const loadSession = async () => {
-      const businesses = await db.getAll<Business>('businesses');
-      if (businesses.length > 0) {
-        const bus = businesses[0];
-        setActiveBusiness(bus);
+      try {
+        // Try to restore from cache first
+        const businesses = await db.getAll<Business>('businesses');
+        if (businesses.length > 0) {
+          const bus = businesses[0];
+          setActiveBusiness(bus);
 
-        const preferredLang = localStorage.getItem('preferred_language');
-        if (preferredLang === 'SW' || preferredLang === 'EN') {
-          setLanguageState(preferredLang as 'EN' | 'SW');
-        } else if (bus.language === 'SW' || bus.language === 'kiswahili' || bus.language?.toUpperCase().includes('SW')) {
-          setLanguageState('SW');
-        } else {
-          setLanguageState('EN');
-        }
+          const preferredLang = localStorage.getItem('preferred_language');
+          if (preferredLang === 'SW' || preferredLang === 'EN') {
+            setLanguageState(preferredLang as 'EN' | 'SW');
+          } else if (bus.language === 'SW' || bus.language === 'kiswahili' || bus.language?.toUpperCase().includes('SW')) {
+            setLanguageState('SW');
+          } else {
+            setLanguageState('EN');
+          }
 
-        const settings = await db.getById<BusinessSettings>('business_settings', bus.tenantId);
-        if (settings) {
-          setBusinessSettings(settings);
-        }
+          const settings = await db.getById<BusinessSettings>('business_settings', bus.tenantId);
+          if (settings) {
+            setBusinessSettings(settings);
+          }
 
-        const users = await db.getAll<User>('users');
-        setAllUsers(users);
+          const users = await db.getAll<User>('users');
+          setAllUsers(users);
 
-        const cachedUserId = localStorage.getItem('active_user_id');
-        if (cachedUserId) {
-          const usr = users.find(u => u.userId === cachedUserId);
-          if (usr) {
-            setActiveUser(usr);
+          const cachedUserId = localStorage.getItem('active_user_id');
+          if (cachedUserId) {
+            const usr = users.find(u => u.userId === cachedUserId);
+            if (usr) {
+              setActiveUser(usr);
+            }
           }
         }
+
+        // Attempt sync from Supabase if online
+        if (isNetworkOnline()) {
+          await db.syncFromSupabase();
+        }
+      } catch (err) {
+        console.warn('Session load error:', err);
       }
     };
 
@@ -98,116 +108,185 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, []);
 
   /**
-   * STRICT ONLINE-ONLY Login.
-   * - Checks network connectivity before attempting authentication.
-   * - Throws error if offline.
-   * - Queries live Supabase users table directly for credential validation.
-   * - No local fallback, no queuing.
-   * - Returns true if credentials match and user is active, false otherwise.
-   * - Throws explicit error message if network unavailable.
+   * HYBRID Login Strategy:
+   * 1. If ONLINE: Query Supabase directly, validate credentials, sync to local cache
+   * 2. If OFFLINE: Fall back to local IndexedDB cache (only if user previously logged in)
+   * - Always validates password/PIN against database
+   * - Always syncs user/business data to local cache after successful login
+   * - Throws explicit error if network unavailable and no cache available
    */
   const login = async (username: string, pinOrPass: string): Promise<boolean> => {
-    // PRE-CHECK: Enforce strict online requirement
-    if (!isNetworkOnline()) {
-      throw new Error('Internet connection required. Staff login requires an active network connection.');
-    }
+    const isOnline = isNetworkOnline();
 
     try {
-      // Direct Supabase query for user by username
-      const { data: supUsers, error: supError } = await supabase
-        .from('users')
-        .select('*')
-        .eq('username', username.toLowerCase().trim())
-        .single();
+      if (isOnline) {
+        // ONLINE PATH: Query Supabase directly
+        console.log('[Auth] Online - querying Supabase for user:', username);
+        
+        const { data: supUsers, error: supError } = await supabase
+          .from('users')
+          .select('*')
+          .eq('username', username.toLowerCase().trim())
+          .single();
 
-      if (supError) {
-        // User not found in Supabase
-        const errorMsg = supError.code === 'PGRST116' 
-          ? 'Staff credentials mismatch. Username not found in the system.'
-          : `Authentication failed: ${supError.message}`;
-        throw new Error(errorMsg);
-      }
+        if (supError || !supUsers) {
+          const errorMsg = supError?.code === 'PGRST116' 
+            ? 'Staff credentials mismatch. Username not found in the system.'
+            : `Authentication failed: ${supError?.message || 'Unknown error'}`;
+          throw new Error(errorMsg);
+        }
 
-      if (!supUsers) {
-        throw new Error('Staff credentials mismatch. No user record returned from server.');
-      }
-
-      // Convert Supabase snake_case to camelCase
-      const user: User = {
-        userId: supUsers.user_id,
-        tenantId: supUsers.tenant_id,
-        role: supUsers.role,
-        username: supUsers.username,
-        phoneNumber: supUsers.phone_number,
-        emailAddress: supUsers.email_address,
-        password: supUsers.password,
-        isActive: supUsers.is_active,
-        createdAt: supUsers.created_at,
-      };
-
-      // Validate password/PIN
-      if (user.password && user.password !== pinOrPass) {
-        throw new Error('Staff credentials mismatch. Incorrect PIN or password.');
-      }
-
-      // Check if user is active
-      if (!user.isActive) {
-        throw new Error('Staff account is inactive. Contact your administrator.');
-      }
-
-      // Load associated business
-      const { data: business, error: bizError } = await supabase
-        .from('businesses')
-        .select('*')
-        .eq('tenant_id', user.tenantId)
-        .single();
-
-      if (bizError || !business) {
-        throw new Error('Associated business record not found in the system.');
-      }
-
-      // Convert business snake_case to camelCase
-      const activeBiz: Business = {
-        tenantId: business.tenant_id,
-        legalName: business.legal_name,
-        tradeName: business.trade_name,
-        industry: business.industry,
-        country: business.country,
-        currency: business.currency,
-        language: business.language,
-        timezone: business.timezone,
-        licenseStatus: business.license_status,
-        licenseExpiresAt: business.license_expires_at,
-        createdAt: business.created_at,
-      };
-
-      // Load business settings
-      const { data: settings, error: settingsError } = await supabase
-        .from('business_settings')
-        .select('*')
-        .eq('tenant_id', user.tenantId)
-        .single();
-
-      if (!settingsError && settings) {
-        const bizSettings: BusinessSettings = {
-          tenantId: settings.tenant_id,
-          chosenTheme: settings.chosen_theme,
-          brandColor: settings.brand_color,
-          dailyRevenueTarget: settings.daily_revenue_target,
-          weeklyRevenueTarget: settings.weekly_revenue_target,
-          monthlyRevenueTarget: settings.monthly_revenue_target,
-          darajaPaybill: settings.daraja_paybill,
-          darajaTillNumber: settings.daraja_till_number,
-          eodTime: settings.eod_time,
+        // Convert Supabase snake_case to camelCase
+        const user: User = {
+          userId: supUsers.user_id,
+          tenantId: supUsers.tenant_id,
+          role: supUsers.role,
+          username: supUsers.username,
+          phoneNumber: supUsers.phone_number,
+          emailAddress: supUsers.email_address,
+          password: supUsers.password,
+          isActive: supUsers.is_active,
+          createdAt: supUsers.created_at,
         };
-        setBusinessSettings(bizSettings);
-      }
 
-      // Set active user, business, and store session
-      setActiveUser(user);
-      setActiveBusiness(activeBiz);
-      localStorage.setItem('active_user_id', user.userId);
-      return true;
+        // Validate password/PIN against stored password
+        if (!user.password || user.password !== pinOrPass) {
+          throw new Error('Staff credentials mismatch. Incorrect PIN or password.');
+        }
+
+        // Check if user is active
+        if (!user.isActive) {
+          throw new Error('Staff account is inactive. Contact your administrator.');
+        }
+
+        // Load associated business from Supabase
+        const { data: business, error: bizError } = await supabase
+          .from('businesses')
+          .select('*')
+          .eq('tenant_id', user.tenantId)
+          .single();
+
+        if (bizError || !business) {
+          throw new Error('Associated business record not found in the system.');
+        }
+
+        // Convert business snake_case to camelCase
+        const activeBiz: Business = {
+          tenantId: business.tenant_id,
+          legalName: business.legal_name,
+          tradeName: business.trade_name,
+          industry: business.industry,
+          country: business.country,
+          currency: business.currency,
+          language: business.language,
+          timezone: business.timezone,
+          licenseStatus: business.license_status,
+          licenseExpiresAt: business.license_expires_at,
+          createdAt: business.created_at,
+        };
+
+        // Load business settings from Supabase
+        const { data: settings, error: settingsError } = await supabase
+          .from('business_settings')
+          .select('*')
+          .eq('tenant_id', user.tenantId)
+          .single();
+
+        let bizSettings: BusinessSettings | null = null;
+        if (!settingsError && settings) {
+          bizSettings = {
+            tenantId: settings.tenant_id,
+            chosenTheme: settings.chosen_theme,
+            brandColor: settings.brand_color,
+            dailyRevenueTarget: settings.daily_revenue_target,
+            weeklyRevenueTarget: settings.weekly_revenue_target,
+            monthlyRevenueTarget: settings.monthly_revenue_target,
+            darajaPaybill: settings.daraja_paybill,
+            darajaTillNumber: settings.daraja_till_number,
+            eodTime: settings.eod_time,
+          };
+        }
+
+        // SYNC: Save to local IndexedDB cache
+        await db.put('businesses', activeBiz);
+        await db.put('users', user);
+        if (bizSettings) {
+          await db.put('business_settings', bizSettings);
+        }
+
+        // Load all users for the tenant from Supabase
+        const { data: allUsersData } = await supabase
+          .from('users')
+          .select('*')
+          .eq('tenant_id', user.tenantId);
+
+        if (allUsersData) {
+          const convertedUsers = allUsersData.map((u: any) => ({
+            userId: u.user_id,
+            tenantId: u.tenant_id,
+            role: u.role,
+            username: u.username,
+            phoneNumber: u.phone_number,
+            emailAddress: u.email_address,
+            password: u.password,
+            isActive: u.is_active,
+            createdAt: u.created_at,
+          }));
+          for (const usr of convertedUsers) {
+            await db.put('users', usr);
+          }
+          setAllUsers(convertedUsers);
+        }
+
+        // Set active user, business, and store session
+        setActiveUser(user);
+        setActiveBusiness(activeBiz);
+        if (bizSettings) {
+          setBusinessSettings(bizSettings);
+        }
+        localStorage.setItem('active_user_id', user.userId);
+        return true;
+      } else {
+        // OFFLINE PATH: Fall back to local cache
+        console.log('[Auth] Offline - querying local IndexedDB for user:', username);
+        
+        const allLocalUsers = await db.getAll<User>('users');
+        const cachedUser = allLocalUsers.find(u => u.username.toLowerCase() === username.toLowerCase());
+
+        if (!cachedUser) {
+          throw new Error('Staff credentials mismatch. Username not found in offline cache. Internet connection required for first login.');
+        }
+
+        // Validate password against cached user
+        if (!cachedUser.password || cachedUser.password !== pinOrPass) {
+          throw new Error('Staff credentials mismatch. Incorrect PIN or password.');
+        }
+
+        if (!cachedUser.isActive) {
+          throw new Error('Staff account is inactive. Contact your administrator.');
+        }
+
+        // Load cached business
+        const cachedBusiness = await db.getById<Business>('businesses', cachedUser.tenantId);
+        if (!cachedBusiness) {
+          throw new Error('Associated business record not found in offline cache.');
+        }
+
+        const cachedSettings = await db.getById<BusinessSettings>('business_settings', cachedUser.tenantId);
+
+        // Set state from cache
+        setActiveUser(cachedUser);
+        setActiveBusiness(cachedBusiness);
+        if (cachedSettings) {
+          setBusinessSettings(cachedSettings);
+        }
+        const cachedTenantUsers = allLocalUsers.filter(u => u.tenantId === cachedUser.tenantId);
+        setAllUsers(cachedTenantUsers);
+        localStorage.setItem('active_user_id', cachedUser.userId);
+        
+        console.warn('[Auth] Offline mode: User authenticated from local cache. Sync will occur when online.');
+        return true;
+      }
     } catch (err: any) {
       // Re-throw with explicit error message
       const message = err?.message || 'Login failed. Please check your credentials and try again.';
@@ -216,65 +295,69 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   /**
-   * STRICT ONLINE-ONLY Fast User Switch.
-   * - Checks network connectivity before attempting authentication.
-   * - Throws error if offline.
-   * - Queries live Supabase users table directly by user_id for PIN validation.
-   * - No local fallback, no queuing.
-   * - Returns true if PIN matches and user is active, false otherwise.
-   * - Throws explicit error message if network unavailable.
+   * HYBRID Fast User Switch Strategy:
+   * 1. If ONLINE: Query Supabase directly, validate PIN, sync to cache
+   * 2. If OFFLINE: Fall back to local cache
    */
   const fastSwitchUser = async (userId: string, pin: string): Promise<boolean> => {
-    // PRE-CHECK: Enforce strict online requirement
-    if (!isNetworkOnline()) {
-      throw new Error('Internet connection required. Staff switch requires an active network connection.');
-    }
+    const isOnline = isNetworkOnline();
 
     try {
-      // Direct Supabase query for user by user_id
-      const { data: supUser, error: supError } = await supabase
-        .from('users')
-        .select('*')
-        .eq('user_id', userId)
-        .single();
+      let targetUser: User | null = null;
 
-      if (supError) {
-        const errorMsg = supError.code === 'PGRST116'
-          ? 'Staff member not found in the system.'
-          : `User lookup failed: ${supError.message}`;
-        throw new Error(errorMsg);
+      if (isOnline) {
+        // ONLINE: Query Supabase
+        console.log('[Auth] Online - switching user:', userId);
+        
+        const { data: supUser, error: supError } = await supabase
+          .from('users')
+          .select('*')
+          .eq('user_id', userId)
+          .single();
+
+        if (supError || !supUser) {
+          throw new Error('Staff member not found in the system.');
+        }
+
+        targetUser = {
+          userId: supUser.user_id,
+          tenantId: supUser.tenant_id,
+          role: supUser.role,
+          username: supUser.username,
+          phoneNumber: supUser.phone_number,
+          emailAddress: supUser.email_address,
+          password: supUser.password,
+          isActive: supUser.is_active,
+          createdAt: supUser.created_at,
+        };
+
+        // Sync to cache
+        await db.put('users', targetUser);
+      } else {
+        // OFFLINE: Query local cache
+        console.log('[Auth] Offline - switching user from cache:', userId);
+        
+        const cachedUsers = await db.getAll<User>('users');
+        targetUser = cachedUsers.find(u => u.userId === userId) || null;
+
+        if (!targetUser) {
+          throw new Error('Staff member not found in offline cache.');
+        }
       }
-
-      if (!supUser) {
-        throw new Error('Staff member record not found.');
-      }
-
-      // Convert Supabase snake_case to camelCase
-      const user: User = {
-        userId: supUser.user_id,
-        tenantId: supUser.tenant_id,
-        role: supUser.role,
-        username: supUser.username,
-        phoneNumber: supUser.phone_number,
-        emailAddress: supUser.email_address,
-        password: supUser.password,
-        isActive: supUser.is_active,
-        createdAt: supUser.created_at,
-      };
 
       // Validate PIN
-      if (user.password && user.password !== pin) {
+      if (!targetUser.password || targetUser.password !== pin) {
         throw new Error('Incorrect PIN for this staff member.');
       }
 
       // Check if user is active
-      if (!user.isActive) {
+      if (!targetUser.isActive) {
         throw new Error('Staff account is inactive.');
       }
 
       // Set active user and store session
-      setActiveUser(user);
-      localStorage.setItem('active_user_id', user.userId);
+      setActiveUser(targetUser);
+      localStorage.setItem('active_user_id', targetUser.userId);
       return true;
     } catch (err: any) {
       const message = err?.message || 'Staff switch failed. Please try again.';

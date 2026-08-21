@@ -89,36 +89,149 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return () => unsubscribe();
   }, []);
 
-  // Standard Login
+  /**
+   * Direct Supabase login with fallback to local DB.
+   * Queries Supabase users table directly for credential validation.
+   * Returns true if credentials match and user is active, false otherwise.
+   */
   const login = async (username: string, pinOrPass: string): Promise<boolean> => {
-    const users = await db.getAll<User>('users');
-    const matched = users.find(u => u.username.toLowerCase().trim() === username.toLowerCase().trim());
-    
-    if (matched) {
-      if (matched.password && matched.password !== pinOrPass) {
+    try {
+      // Direct Supabase query for user by username
+      const { data: supUsers, error: supError } = await supabase
+        .from('users')
+        .select('*')
+        .eq('username', username.toLowerCase().trim())
+        .single();
+
+      if (supError) {
+        // User not found in Supabase; fall back to local DB
+        console.warn('[Auth] Supabase user lookup failed, falling back to local DB:', supError.message);
+        const localUsers = await db.getAll<User>('users');
+        const matched = localUsers.find(u => u.username.toLowerCase().trim() === username.toLowerCase().trim());
+
+        if (!matched) {
+          return false;
+        }
+        if (matched.password && matched.password !== pinOrPass) {
+          return false;
+        }
+        setActiveUser(matched);
+        localStorage.setItem('active_user_id', matched.userId);
+        return true;
+      }
+
+      // Convert Supabase snake_case to camelCase
+      const user: User = {
+        userId: supUsers.user_id,
+        tenantId: supUsers.tenant_id,
+        role: supUsers.role,
+        username: supUsers.username,
+        phoneNumber: supUsers.phone_number,
+        emailAddress: supUsers.email_address,
+        password: supUsers.password,
+        isActive: supUsers.is_active,
+        createdAt: supUsers.created_at,
+      };
+
+      // Validate password/PIN
+      if (user.password && user.password !== pinOrPass) {
+        return false;
+      }
+
+      // Check if user is active
+      if (!user.isActive) {
+        console.warn('[Auth] User is inactive in Supabase');
+        return false;
+      }
+
+      // Set active user and store session
+      setActiveUser(user);
+      localStorage.setItem('active_user_id', user.userId);
+      return true;
+    } catch (err: any) {
+      console.error('[Auth] Login error:', err);
+      // Ultimate fallback: try local DB
+      const localUsers = await db.getAll<User>('users');
+      const matched = localUsers.find(u => u.username.toLowerCase().trim() === username.toLowerCase().trim());
+
+      if (!matched || (matched.password && matched.password !== pinOrPass)) {
         return false;
       }
       setActiveUser(matched);
       localStorage.setItem('active_user_id', matched.userId);
       return true;
     }
-    return false;
   };
 
-  // Fast user switcher
+  /**
+   * Fast user switcher with direct Supabase lookup.
+   * Queries Supabase users table directly by user_id for PIN validation.
+   * Returns true if PIN matches and user is active, false otherwise.
+   */
   const fastSwitchUser = async (userId: string, pin: string): Promise<boolean> => {
-    const users = await db.getAll<User>('users');
-    const matched = users.find(u => u.userId === userId);
-    
-    if (matched) {
-      if (matched.password && matched.password !== pin) {
+    try {
+      // Direct Supabase query for user by user_id
+      const { data: supUser, error: supError } = await supabase
+        .from('users')
+        .select('*')
+        .eq('user_id', userId)
+        .single();
+
+      if (supError) {
+        // User not found in Supabase; fall back to local DB
+        console.warn('[Auth] Supabase user lookup for switch failed, falling back to local DB:', supError.message);
+        const localUsers = await db.getAll<User>('users');
+        const matched = localUsers.find(u => u.userId === userId);
+
+        if (!matched || (matched.password && matched.password !== pin)) {
+          return false;
+        }
+        setActiveUser(matched);
+        localStorage.setItem('active_user_id', matched.userId);
+        return true;
+      }
+
+      // Convert Supabase snake_case to camelCase
+      const user: User = {
+        userId: supUser.user_id,
+        tenantId: supUser.tenant_id,
+        role: supUser.role,
+        username: supUser.username,
+        phoneNumber: supUser.phone_number,
+        emailAddress: supUser.email_address,
+        password: supUser.password,
+        isActive: supUser.is_active,
+        createdAt: supUser.created_at,
+      };
+
+      // Validate PIN
+      if (user.password && user.password !== pin) {
+        return false;
+      }
+
+      // Check if user is active
+      if (!user.isActive) {
+        console.warn('[Auth] User is inactive in Supabase');
+        return false;
+      }
+
+      // Set active user and store session
+      setActiveUser(user);
+      localStorage.setItem('active_user_id', user.userId);
+      return true;
+    } catch (err: any) {
+      console.error('[Auth] fastSwitchUser error:', err);
+      // Ultimate fallback: try local DB
+      const localUsers = await db.getAll<User>('users');
+      const matched = localUsers.find(u => u.userId === userId);
+
+      if (!matched || (matched.password && matched.password !== pin)) {
         return false;
       }
       setActiveUser(matched);
       localStorage.setItem('active_user_id', matched.userId);
       return true;
     }
-    return false;
   };
 
   const logout = () => {

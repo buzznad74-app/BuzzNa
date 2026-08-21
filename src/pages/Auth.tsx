@@ -11,7 +11,7 @@ import {
 type Toast = (text: string, type: 'success' | 'error' | 'info') => void;
 
 export const Auth: React.FC<{ addToast: Toast }> = ({ addToast }) => {
-  const { registerBusiness, login, allUsers } = useAuth();
+  const { registerBusiness, login } = useAuth();
   const { t, dir } = useI18n();
   const { theme, toggleTheme, primaryColor, logoUrl } = useTheme();
 
@@ -91,7 +91,6 @@ export const Auth: React.FC<{ addToast: Toast }> = ({ addToast }) => {
       try { await triggerSync((registered as any)?.tenantId || undefined); } catch { /* best-effort */ }
 
       // --- Mailing: welcome + business activation confirmation ---
-      // Fire-and-forget so slow SMTP never blocks the UI; offline goes to queue.
       const welcomePayload = {
         to: ownerEmail,
         template: 'owner_welcome',
@@ -132,7 +131,7 @@ export const Auth: React.FC<{ addToast: Toast }> = ({ addToast }) => {
     const success = await login(loginUsername, loginPass);
     if (success) {
       addToast(t('auth.ok.welcomeBack', 'Welcome back, {name}! Till session active.').replace('{name}', loginUsername), 'success');
-      // Force immediate sync after login to enforce session & till security (spec requirement)
+      // Force immediate sync after login to enforce session & till security
       try { await triggerSync((await (window as any).__ACTIVE_BUSINESS_TENANT__ ) || undefined); } catch { /* best-effort */ }
     } else {
       addToast(t('auth.err.badCredentials', 'Staff credentials mismatch or database context error.'), 'error');
@@ -159,13 +158,6 @@ export const Auth: React.FC<{ addToast: Toast }> = ({ addToast }) => {
     tryPendingSync();
     return () => window.removeEventListener('online', handleOnline);
   }, [t]);
-
-  // Seeded user quicklinks (preserved sandbox helper)
-  const selectSeededUser = (uname: string) => {
-    setLoginUsername(uname);
-    setLoginPass('Demo@1234');
-    addToast(t('auth.ok.demoSelected', 'Demo operator selected: {name}').replace('{name}', uname), 'success');
-  };
 
   // Density + theme utility groups
   const inputCls =
@@ -304,31 +296,6 @@ export const Auth: React.FC<{ addToast: Toast }> = ({ addToast }) => {
                 <span>{t('auth.login.submit', 'Authorize Session')}</span>
                 <ArrowRight className="w-4 h-4" />
               </button>
-
-              {allUsers.length > 0 && (
-                <div className="pt-3 border-t border-zinc-100 dark:border-zinc-800">
-                  <p className="text-[11px] text-zinc-500 dark:text-zinc-400 font-bold uppercase mb-2">
-                    {t('auth.login.demoOperators', 'Demo Operators (Sandbox):')}
-                  </p>
-                  <div className="flex flex-wrap gap-2">
-                    {allUsers.slice(0, 3).map((user) => (
-                      <button
-                        key={user.userId}
-                        type="button"
-                        onClick={() => selectSeededUser(user.username)}
-                        className="text-[11px] px-2.5 py-1 rounded-md font-semibold transition-all cursor-pointer
-                                   bg-zinc-100 dark:bg-zinc-800 hover:bg-[color:var(--brand,#2563EB)]/10
-                                   text-zinc-700 dark:text-zinc-200
-                                   hover:text-[color:var(--brand,#2563EB)]
-                                   border border-zinc-200 dark:border-zinc-700
-                                   hover:border-[color:var(--brand,#2563EB)]/40"
-                      >
-                        {user.username}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
             </form>
           ) : (
             <form onSubmit={handleRegisterSubmit} className="space-y-4" id="register-wizard">
@@ -544,3 +511,4 @@ export const Auth: React.FC<{ addToast: Toast }> = ({ addToast }) => {
 };
 
 export default Auth;
+             

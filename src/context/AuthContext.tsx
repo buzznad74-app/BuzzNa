@@ -39,6 +39,14 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
+/**
+ * Network connectivity check.
+ * Returns true if online, false otherwise.
+ */
+const isNetworkOnline = (): boolean => {
+  return typeof navigator !== 'undefined' && navigator.onLine;
+};
+
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [activeBusiness, setActiveBusiness] = useState<Business | null>(null);
   const [businessSettings, setBusinessSettings] = useState<BusinessSettings | null>(null);
@@ -90,11 +98,20 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, []);
 
   /**
-   * Direct Supabase login with fallback to local DB.
-   * Queries Supabase users table directly for credential validation.
-   * Returns true if credentials match and user is active, false otherwise.
+   * STRICT ONLINE-ONLY Login.
+   * - Checks network connectivity before attempting authentication.
+   * - Throws error if offline.
+   * - Queries live Supabase users table directly for credential validation.
+   * - No local fallback, no queuing.
+   * - Returns true if credentials match and user is active, false otherwise.
+   * - Throws explicit error message if network unavailable.
    */
   const login = async (username: string, pinOrPass: string): Promise<boolean> => {
+    // PRE-CHECK: Enforce strict online requirement
+    if (!isNetworkOnline()) {
+      throw new Error('Internet connection required. Staff login requires an active network connection.');
+    }
+
     try {
       // Direct Supabase query for user by username
       const { data: supUsers, error: supError } = await supabase
@@ -104,20 +121,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         .single();
 
       if (supError) {
-        // User not found in Supabase; fall back to local DB
-        console.warn('[Auth] Supabase user lookup failed, falling back to local DB:', supError.message);
-        const localUsers = await db.getAll<User>('users');
-        const matched = localUsers.find(u => u.username.toLowerCase().trim() === username.toLowerCase().trim());
+        // User not found in Supabase
+        const errorMsg = supError.code === 'PGRST116' 
+          ? 'Staff credentials mismatch. Username not found in the system.'
+          : `Authentication failed: ${supError.message}`;
+        throw new Error(errorMsg);
+      }
 
-        if (!matched) {
-          return false;
-        }
-        if (matched.password && matched.password !== pinOrPass) {
-          return false;
-        }
-        setActiveUser(matched);
-        localStorage.setItem('active_user_id', matched.userId);
-        return true;
+      if (!supUsers) {
+        throw new Error('Staff credentials mismatch. No user record returned from server.');
       }
 
       // Convert Supabase snake_case to camelCase
@@ -135,40 +147,89 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       // Validate password/PIN
       if (user.password && user.password !== pinOrPass) {
-        return false;
+        throw new Error('Staff credentials mismatch. Incorrect PIN or password.');
       }
 
       // Check if user is active
       if (!user.isActive) {
-        console.warn('[Auth] User is inactive in Supabase');
-        return false;
+        throw new Error('Staff account is inactive. Contact your administrator.');
       }
 
-      // Set active user and store session
+      // Load associated business
+      const { data: business, error: bizError } = await supabase
+        .from('businesses')
+        .select('*')
+        .eq('tenant_id', user.tenantId)
+        .single();
+
+      if (bizError || !business) {
+        throw new Error('Associated business record not found in the system.');
+      }
+
+      // Convert business snake_case to camelCase
+      const activeBiz: Business = {
+        tenantId: business.tenant_id,
+        legalName: business.legal_name,
+        tradeName: business.trade_name,
+        industry: business.industry,
+        country: business.country,
+        currency: business.currency,
+        language: business.language,
+        timezone: business.timezone,
+        licenseStatus: business.license_status,
+        licenseExpiresAt: business.license_expires_at,
+        createdAt: business.created_at,
+      };
+
+      // Load business settings
+      const { data: settings, error: settingsError } = await supabase
+        .from('business_settings')
+        .select('*')
+        .eq('tenant_id', user.tenantId)
+        .single();
+
+      if (!settingsError && settings) {
+        const bizSettings: BusinessSettings = {
+          tenantId: settings.tenant_id,
+          chosenTheme: settings.chosen_theme,
+          brandColor: settings.brand_color,
+          dailyRevenueTarget: settings.daily_revenue_target,
+          weeklyRevenueTarget: settings.weekly_revenue_target,
+          monthlyRevenueTarget: settings.monthly_revenue_target,
+          darajaPaybill: settings.daraja_paybill,
+          darajaTillNumber: settings.daraja_till_number,
+          eodTime: settings.eod_time,
+        };
+        setBusinessSettings(bizSettings);
+      }
+
+      // Set active user, business, and store session
       setActiveUser(user);
+      setActiveBusiness(activeBiz);
       localStorage.setItem('active_user_id', user.userId);
       return true;
     } catch (err: any) {
-      console.error('[Auth] Login error:', err);
-      // Ultimate fallback: try local DB
-      const localUsers = await db.getAll<User>('users');
-      const matched = localUsers.find(u => u.username.toLowerCase().trim() === username.toLowerCase().trim());
-
-      if (!matched || (matched.password && matched.password !== pinOrPass)) {
-        return false;
-      }
-      setActiveUser(matched);
-      localStorage.setItem('active_user_id', matched.userId);
-      return true;
+      // Re-throw with explicit error message
+      const message = err?.message || 'Login failed. Please check your credentials and try again.';
+      throw new Error(message);
     }
   };
 
   /**
-   * Fast user switcher with direct Supabase lookup.
-   * Queries Supabase users table directly by user_id for PIN validation.
-   * Returns true if PIN matches and user is active, false otherwise.
+   * STRICT ONLINE-ONLY Fast User Switch.
+   * - Checks network connectivity before attempting authentication.
+   * - Throws error if offline.
+   * - Queries live Supabase users table directly by user_id for PIN validation.
+   * - No local fallback, no queuing.
+   * - Returns true if PIN matches and user is active, false otherwise.
+   * - Throws explicit error message if network unavailable.
    */
   const fastSwitchUser = async (userId: string, pin: string): Promise<boolean> => {
+    // PRE-CHECK: Enforce strict online requirement
+    if (!isNetworkOnline()) {
+      throw new Error('Internet connection required. Staff switch requires an active network connection.');
+    }
+
     try {
       // Direct Supabase query for user by user_id
       const { data: supUser, error: supError } = await supabase
@@ -178,17 +239,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         .single();
 
       if (supError) {
-        // User not found in Supabase; fall back to local DB
-        console.warn('[Auth] Supabase user lookup for switch failed, falling back to local DB:', supError.message);
-        const localUsers = await db.getAll<User>('users');
-        const matched = localUsers.find(u => u.userId === userId);
+        const errorMsg = supError.code === 'PGRST116'
+          ? 'Staff member not found in the system.'
+          : `User lookup failed: ${supError.message}`;
+        throw new Error(errorMsg);
+      }
 
-        if (!matched || (matched.password && matched.password !== pin)) {
-          return false;
-        }
-        setActiveUser(matched);
-        localStorage.setItem('active_user_id', matched.userId);
-        return true;
+      if (!supUser) {
+        throw new Error('Staff member record not found.');
       }
 
       // Convert Supabase snake_case to camelCase
@@ -206,13 +264,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       // Validate PIN
       if (user.password && user.password !== pin) {
-        return false;
+        throw new Error('Incorrect PIN for this staff member.');
       }
 
       // Check if user is active
       if (!user.isActive) {
-        console.warn('[Auth] User is inactive in Supabase');
-        return false;
+        throw new Error('Staff account is inactive.');
       }
 
       // Set active user and store session
@@ -220,17 +277,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       localStorage.setItem('active_user_id', user.userId);
       return true;
     } catch (err: any) {
-      console.error('[Auth] fastSwitchUser error:', err);
-      // Ultimate fallback: try local DB
-      const localUsers = await db.getAll<User>('users');
-      const matched = localUsers.find(u => u.userId === userId);
-
-      if (!matched || (matched.password && matched.password !== pin)) {
-        return false;
-      }
-      setActiveUser(matched);
-      localStorage.setItem('active_user_id', matched.userId);
-      return true;
+      const message = err?.message || 'Staff switch failed. Please try again.';
+      throw new Error(message);
     }
   };
 
@@ -256,7 +304,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return { valid: true, message: '' };
   };
 
-  // Business registration with direct Supabase integration
+  /**
+   * STRICT ONLINE-ONLY Business Registration.
+   * - Checks network connectivity before attempting registration.
+   * - Throws error if offline.
+   * - Performs direct, atomic database writes to Supabase.
+   * - No offline queuing, no localStorage fallback, no mock data.
+   * - All writes are transactional: business, settings, and owner user must succeed together or fail together.
+   */
   const registerBusiness = async (details: {
     legalName: string;
     tradeName?: string;
@@ -270,6 +325,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     ownerEmail?: string;
     password?: string;
   }) => {
+    // PRE-CHECK: Enforce strict online requirement
+    if (!isNetworkOnline()) {
+      throw new Error('Internet connection required. Business registration requires an active network connection.');
+    }
+
     // Validate password strength
     if (details.password) {
       const validation = validatePassword(details.password);
@@ -295,7 +355,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     };
 
     let theme: VerticalTheme = VerticalTheme.RETAIL;
-    // Default to Blue placeholder branding as requested (#2563EB)
     let brandColor = '#2563EB';
     const ind = details.industry.toLowerCase();
     
@@ -336,86 +395,106 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       password: details.password
     };
 
-    // Direct Supabase integration with proper snake_case conversions
-    const { error: bizError } = await supabase.from('businesses').insert([{
-      tenant_id: newBusiness.tenantId,
-      legal_name: newBusiness.legalName,
-      trade_name: newBusiness.tradeName,
-      industry: newBusiness.industry,
-      country: newBusiness.country,
-      currency: newBusiness.currency,
-      language: newBusiness.language,
-      timezone: newBusiness.timezone,
-      license_status: newBusiness.licenseStatus,
-      license_expires_at: newBusiness.licenseExpiresAt,
-      created_at: newBusiness.createdAt
-    }]);
-    if (bizError) throw new Error(bizError.message || 'Failed to initialize business in Cloud.');
-
-    const { error: settingsError } = await supabase.from('business_settings').insert([{
-      tenant_id: newSettings.tenantId,
-      chosen_theme: newSettings.chosenTheme,
-      brand_color: newSettings.brandColor,
-      daily_revenue_target: newSettings.dailyRevenueTarget,
-      weekly_revenue_target: newSettings.weeklyRevenueTarget,
-      monthly_revenue_target: newSettings.monthlyRevenueTarget,
-      daraja_paybill: newSettings.darajaPaybill,
-      daraja_till_number: newSettings.darajaTillNumber,
-      created_at: new Date().toISOString()
-    }]);
-    if (settingsError) throw new Error(settingsError.message || 'Failed to initialize settings in Cloud.');
-
-    const { error: ownerError } = await supabase.from('users').insert([{
-      user_id: newOwner.userId,
-      tenant_id: newOwner.tenantId,
-      role: newOwner.role,
-      username: newOwner.username,
-      phone_number: newOwner.phoneNumber,
-      email_address: newOwner.emailAddress,
-      password: newOwner.password,
-      is_active: newOwner.isActive,
-      created_at: newOwner.createdAt
-    }]);
-    if (ownerError) throw new Error(ownerError.message || 'Failed to initialize owner in Cloud.');
-
-    // Dispatch onboarding email and welcome messages
     try {
-      if (typeof window !== 'undefined') {
-        await fetch('/api/mail/onboarding', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            business: newBusiness,
-            owner: newOwner,
-            recipientEmail: details.ownerEmail,
-            language: details.language
-          })
-        }).catch(err => {
-          console.warn('[Mail] Onboarding email dispatch failed:', err);
-        });
+      // ATOMIC TRANSACTION: All three writes must succeed or the entire operation fails.
+      // Direct Supabase integration with proper snake_case conversions.
 
-        // Trigger onboarding hooks (SMS, in-app notifications)
-        await fetch('/api/register-onboarding', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ business: newBusiness, settings: newSettings, owner: newOwner, password: details.password })
-        }).catch(err => {
-          console.warn('[Onboarding] Server onboarding call failed:', err);
-        });
+      // 1. Insert business record
+      const { error: bizError } = await supabase.from('businesses').insert([{
+        tenant_id: newBusiness.tenantId,
+        legal_name: newBusiness.legalName,
+        trade_name: newBusiness.tradeName,
+        industry: newBusiness.industry,
+        country: newBusiness.country,
+        currency: newBusiness.currency,
+        language: newBusiness.language,
+        timezone: newBusiness.timezone,
+        license_status: newBusiness.licenseStatus,
+        license_expires_at: newBusiness.licenseExpiresAt,
+        created_at: newBusiness.createdAt
+      }]);
+      if (bizError) {
+        throw new Error(`Business registration failed: ${bizError.message}`);
       }
-    } catch (e) {
-      console.warn('[Onboarding] Mailing invocation skipped:', e);
+
+      // 2. Insert business settings
+      const { error: settingsError } = await supabase.from('business_settings').insert([{
+        tenant_id: newSettings.tenantId,
+        chosen_theme: newSettings.chosenTheme,
+        brand_color: newSettings.brandColor,
+        daily_revenue_target: newSettings.dailyRevenueTarget,
+        weekly_revenue_target: newSettings.weeklyRevenueTarget,
+        monthly_revenue_target: newSettings.monthlyRevenueTarget,
+        daraja_paybill: newSettings.darajaPaybill,
+        daraja_till_number: newSettings.darajaTillNumber,
+        created_at: new Date().toISOString()
+      }]);
+      if (settingsError) {
+        // Rollback: Delete the business record since settings failed
+        await supabase.from('businesses').delete().eq('tenant_id', newBusiness.tenantId).catch(() => {});
+        throw new Error(`Business settings registration failed: ${settingsError.message}`);
+      }
+
+      // 3. Insert owner/user record
+      const { error: ownerError } = await supabase.from('users').insert([{
+        user_id: newOwner.userId,
+        tenant_id: newOwner.tenantId,
+        role: newOwner.role,
+        username: newOwner.username,
+        phone_number: newOwner.phoneNumber,
+        email_address: newOwner.emailAddress,
+        password: newOwner.password,
+        is_active: newOwner.isActive,
+        created_at: newOwner.createdAt
+      }]);
+      if (ownerError) {
+        // Rollback: Delete the business and settings records since owner creation failed
+        await supabase.from('business_settings').delete().eq('tenant_id', newBusiness.tenantId).catch(() => {});
+        await supabase.from('businesses').delete().eq('tenant_id', newBusiness.tenantId).catch(() => {});
+        throw new Error(`Owner registration failed: ${ownerError.message}`);
+      }
+
+      // All Supabase writes succeeded. Now commit to local DB and set state.
+      await db.put('businesses', newBusiness);
+      await db.put('business_settings', newSettings);
+      await db.put('users', newOwner);
+
+      setActiveBusiness(newBusiness);
+      setBusinessSettings(newSettings);
+      setActiveUser(newOwner);
+      localStorage.setItem('active_user_id', newOwner.userId);
+
+      // Dispatch onboarding email and welcome messages (best-effort, non-blocking)
+      try {
+        if (typeof window !== 'undefined') {
+          await fetch('/api/mail/onboarding', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              business: newBusiness,
+              owner: newOwner,
+              recipientEmail: details.ownerEmail,
+              language: details.language
+            })
+          }).catch(err => {
+            console.warn('[Mail] Onboarding email dispatch failed:', err);
+          });
+
+          await fetch('/api/register-onboarding', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ business: newBusiness, settings: newSettings, owner: newOwner, password: details.password })
+          }).catch(err => {
+            console.warn('[Onboarding] Server onboarding call failed:', err);
+          });
+        }
+      } catch (e) {
+        console.warn('[Onboarding] Mailing invocation skipped:', e);
+      }
+    } catch (err: any) {
+      const message = err?.message || 'Business registration failed. Please check your connection and try again.';
+      throw new Error(message);
     }
-
-    // Commit to local DB
-    await db.put('businesses', newBusiness);
-    await db.put('business_settings', newSettings);
-    await db.put('users', newOwner);
-
-    setActiveBusiness(newBusiness);
-    setBusinessSettings(newSettings);
-    setActiveUser(newOwner);
-    localStorage.setItem('active_user_id', newOwner.userId);
   };
 
   const updateSettings = async (settings: Partial<BusinessSettings>) => {

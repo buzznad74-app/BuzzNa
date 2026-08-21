@@ -15,27 +15,10 @@ export const Auth: React.FC<{ addToast: Toast }> = ({ addToast }) => {
   const { t, dir } = useI18n();
   const { theme, toggleTheme, primaryColor, logoUrl } = useTheme();
 
-  // small helper: call server sync endpoint; queues when offline
-  const triggerSync = async (tenantId?: string) => {
-    try {
-      const payload = { tenantId };
-      if (typeof navigator !== 'undefined' && !navigator.onLine) {
-        localStorage.setItem('pending_sync_request', JSON.stringify(payload));
-        addToast(t('sync.queued', 'Offline: sync queued and will run when online.'), 'info');
-        return;
-      }
-      await apiClient.post('/api/sync/trigger', payload);
-      addToast(t('sync.ok', 'Sync completed.'), 'success');
-    } catch (err: any) {
-      console.warn('[Auth] sync trigger failed:', err);
-      localStorage.setItem('pending_sync_request', JSON.stringify({ tenantId }));
-    }
-  };
-
   // Tab selector: 'login' | 'register'
   const [authMode, setAuthMode] = useState<'login' | 'register'>('login');
 
-  // Registration wizard state (preserved)
+  // Registration wizard state
   const [step, setStep] = useState(1);
   const [legalName, setLegalName] = useState('');
   const [tradeName, setTradeName] = useState('');
@@ -51,17 +34,24 @@ export const Auth: React.FC<{ addToast: Toast }> = ({ addToast }) => {
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
 
-  // Login state (preserved)
+  // Login state
   const [loginUsername, setLoginUsername] = useState('');
   const [loginPass, setLoginPass] = useState('');
 
-  // Password policy (kept: 8+ chars, upper, lower, digit)
+  // Loading state for async operations
+  const [isLoading, setIsLoading] = useState(false);
+
+  // Password policy (8+ chars, upper, lower, digit)
   const passwordValid = (p: string) =>
     p.length >= 8 && /[A-Z]/.test(p) && /[a-z]/.test(p) && /\d/.test(p);
 
-  // ---- Registration submit (preserved logic + welcome mail dispatch) ----
+  /**
+   * Registration submit handler.
+   * Catches errors from strict online-only registerBusiness() and surfaces them as toasts.
+   */
   const handleRegisterSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    
     if (!legalName || !ownerName || !ownerPhone || !ownerEmail) {
       addToast(t('auth.err.missingFields', 'Please complete all required fields, including Owner Email.'), 'error');
       return;
@@ -79,85 +69,77 @@ export const Auth: React.FC<{ addToast: Toast }> = ({ addToast }) => {
       return;
     }
 
+    setIsLoading(true);
     try {
-      const registered = await registerBusiness({
+      await registerBusiness({
         legalName, tradeName, industry, country, currency,
         language, timezone,
         ownerName, ownerPhone, ownerEmail, password,
       });
 
       addToast(t('auth.ok.onboarded', 'Onboarding Complete: Brand registered and synced to cloud!'), 'success');
-      // Force a background sync after a successful onboarding to ensure Supabase/cloud is in sync
-      try { await triggerSync((registered as any)?.tenantId || undefined); } catch { /* best-effort */ }
 
-      // --- Mailing: welcome + business activation confirmation ---
-      const welcomePayload = {
-        to: ownerEmail,
-        template: 'owner_welcome',
-        locale: language,
-        theme: { primary: primaryColor, mode: theme, logoUrl },
-        data: {
-          ownerName,
-          legalName,
-          tradeName: tradeName || legalName,
-          tenantId: (registered as any)?.tenantId,
-        },
-      };
+      // Trigger post-registration notifications (best-effort, non-blocking)
       try {
-        if (typeof navigator !== 'undefined' && !navigator.onLine) {
-          localStorage.setItem('pending_welcome_email', JSON.stringify(welcomePayload));
-        } else {
-          apiClient.post('/api/mail/welcome', welcomePayload).catch(() => {
-            localStorage.setItem('pending_welcome_email', JSON.stringify(welcomePayload));
+        if (typeof window !== 'undefined' && navigator.onLine) {
+          await apiClient.post('/api/mail/welcome', {
+            to: ownerEmail,
+            template: 'owner_welcome',
+            locale: language,
+            theme: { primary: primaryColor, mode: theme, logoUrl },
+            data: {
+              ownerName,
+              legalName,
+              tradeName: tradeName || legalName,
+            },
+          }).catch(err => {
+            console.warn('[Auth] Welcome email dispatch failed:', err);
           });
-          apiClient.post('/api/mail/activation', {
-            ...welcomePayload,
-            template: 'business_activation',
-          }).catch(() => { /* non-fatal */ });
         }
-      } catch { /* mailing is best-effort */ }
+      } catch (e) {
+        console.warn('[Auth] Post-registration mailing skipped:', e);
+      }
     } catch (err: any) {
-      addToast(err?.message || t('auth.err.registerFailed', 'Registration failed.'), 'error');
+      // Catch explicit error from strict online-only registerBusiness()
+      const message = err?.message || t('auth.err.registerFailed', 'Registration failed.');
+      addToast(message, 'error');
+    } finally {
+      setIsLoading(false);
     }
   };
 
-  // ---- Login submit (preserved) ----
+  /**
+   * Login submit handler.
+   * Catches errors from strict online-only login() and surfaces them as toasts.
+   */
   const handleLoginSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    
     if (!loginUsername) {
       addToast(t('auth.err.usernameRequired', 'Username is required.'), 'error');
       return;
     }
-    const success = await login(loginUsername, loginPass);
-    if (success) {
-      addToast(t('auth.ok.welcomeBack', 'Welcome back, {name}! Till session active.').replace('{name}', loginUsername), 'success');
-      // Force immediate sync after login to enforce session & till security
-      try { await triggerSync((await (window as any).__ACTIVE_BUSINESS_TENANT__ ) || undefined); } catch { /* best-effort */ }
-    } else {
-      addToast(t('auth.err.badCredentials', 'Staff credentials mismatch or database context error.'), 'error');
+
+    setIsLoading(true);
+    try {
+      const success = await login(loginUsername, loginPass);
+      if (success) {
+        addToast(
+          t('auth.ok.welcomeBack', 'Welcome back, {name}! Till session active.').replace('{name}', loginUsername),
+          'success'
+        );
+      } else {
+        addToast(t('auth.err.badCredentials', 'Staff credentials mismatch. Please try again.'), 'error');
+      }
+    } catch (err: any) {
+      // Catch explicit error from strict online-only login()
+      // This includes network errors ("Internet connection required") and credential mismatches
+      const message = err?.message || t('auth.err.badCredentials', 'Staff credentials mismatch or database context error.');
+      addToast(message, 'error');
+    } finally {
+      setIsLoading(false);
     }
   };
-
-  // Try to process pending sync requests when connectivity is restored
-  useEffect(() => {
-    const tryPendingSync = async () => {
-      try {
-        const pending = localStorage.getItem('pending_sync_request');
-        if (!pending) return;
-        if (typeof navigator !== 'undefined' && !navigator.onLine) return;
-        const payload = JSON.parse(pending);
-        await apiClient.post('/api/sync/trigger', payload);
-        localStorage.removeItem('pending_sync_request');
-        addToast(t('sync.retryOk', 'Queued sync processed successfully.'), 'success');
-      } catch (err) {
-        console.warn('[Auth] retry pending sync error:', err);
-      }
-    };
-    const handleOnline = () => tryPendingSync();
-    window.addEventListener('online', handleOnline);
-    tryPendingSync();
-    return () => window.removeEventListener('online', handleOnline);
-  }, [t]);
 
   // Density + theme utility groups
   const inputCls =
@@ -172,7 +154,7 @@ export const Auth: React.FC<{ addToast: Toast }> = ({ addToast }) => {
   const primaryBtnCls =
     'w-full text-white font-bold text-sm tracking-wide uppercase py-3 rounded-lg ' +
     'shadow-sm hover:shadow transition-all flex items-center justify-center gap-2 ' +
-    'bg-[color:var(--brand,#2563EB)] hover:brightness-110';
+    'bg-[color:var(--brand,#2563EB)] hover:brightness-110 disabled:opacity-50 disabled:cursor-not-allowed';
 
   return (
     <div
@@ -214,7 +196,7 @@ export const Auth: React.FC<{ addToast: Toast }> = ({ addToast }) => {
                           border border-emerald-100 dark:border-emerald-800/60
                           px-2.5 py-1 rounded-full" id="auth-offline-notice">
             <Wifi className="w-3.5 h-3.5" />
-            <span>{t('auth.offlineNotice', 'Works offline. Auto-syncs to Cloud.')}</span>
+            <span>{t('auth.offlineNotice', 'Login & Registration require internet. Other features work offline.')}</span>
           </div>
         </div>
       </header>
@@ -277,6 +259,7 @@ export const Auth: React.FC<{ addToast: Toast }> = ({ addToast }) => {
                     placeholder={t('auth.login.usernamePlaceholder', 'e.g., Mary Kawira')}
                     className={inputCls}
                     id="login-username-input"
+                    disabled={isLoading}
                   />
                 </div>
                 <div>
@@ -288,12 +271,19 @@ export const Auth: React.FC<{ addToast: Toast }> = ({ addToast }) => {
                     placeholder={t('auth.login.pinPlaceholder', 'Enter till pin code')}
                     className={inputCls}
                     id="login-pin-input"
+                    disabled={isLoading}
                   />
                 </div>
               </div>
 
-              <button type="submit" className={primaryBtnCls} style={{ minHeight: 44 }} id="login-submit-btn">
-                <span>{t('auth.login.submit', 'Authorize Session')}</span>
+              <button 
+                type="submit" 
+                className={primaryBtnCls} 
+                style={{ minHeight: 44 }} 
+                id="login-submit-btn"
+                disabled={isLoading}
+              >
+                <span>{isLoading ? t('auth.login.submitting', 'Authorizing...') : t('auth.login.submit', 'Authorize Session')}</span>
                 <ArrowRight className="w-4 h-4" />
               </button>
             </form>
@@ -318,6 +308,7 @@ export const Auth: React.FC<{ addToast: Toast }> = ({ addToast }) => {
                         onChange={(e) => { setLegalName(e.target.value); if (!tradeName) setTradeName(e.target.value); }}
                         placeholder={t('auth.reg.legalNamePh', 'e.g., Kamau Butcheries Ltd')}
                         className={inputCls}
+                        disabled={isLoading}
                       />
                     </div>
 
@@ -328,13 +319,14 @@ export const Auth: React.FC<{ addToast: Toast }> = ({ addToast }) => {
                         onChange={(e) => setTradeName(e.target.value)}
                         placeholder={t('auth.reg.tradeNamePh', 'e.g., Kamau Butchery')}
                         className={inputCls}
+                        disabled={isLoading}
                       />
                     </div>
 
                     <div className="grid grid-cols-2 gap-3">
                       <div>
                         <label className={labelCls}>{t('auth.reg.industry', 'Sector Vertical *')}</label>
-                        <select value={industry} onChange={(e) => setIndustry(e.target.value)} className={inputCls}>
+                        <select value={industry} onChange={(e) => setIndustry(e.target.value)} className={inputCls} disabled={isLoading}>
                           <option value="Retail General">{t('industry.retail', 'General Retail')}</option>
                           <option value="Butchery Meat">{t('industry.butchery', 'Butchery Shop')}</option>
                           <option value="Mitumba Apparel">{t('industry.mitumba', 'Mitumba Apparel')}</option>
@@ -357,6 +349,7 @@ export const Auth: React.FC<{ addToast: Toast }> = ({ addToast }) => {
                             );
                           }}
                           className={inputCls}
+                          disabled={isLoading}
                         >
                           <option value="Kenya">{t('country.ke', 'Kenya (KES)')}</option>
                           <option value="Tanzania">{t('country.tz', 'Tanzania (TZS)')}</option>
@@ -368,7 +361,7 @@ export const Auth: React.FC<{ addToast: Toast }> = ({ addToast }) => {
                     <div className="grid grid-cols-2 gap-3">
                       <div>
                         <label className={labelCls}>{t('auth.reg.language', 'Language')}</label>
-                        <select value={language} onChange={(e) => setLanguage(e.target.value)} className={inputCls}>
+                        <select value={language} onChange={(e) => setLanguage(e.target.value)} className={inputCls} disabled={isLoading}>
                           <option value="en">{t('lang.en', 'English')}</option>
                           <option value="sw">{t('lang.sw', 'Kiswahili')}</option>
                           <option value="fr">{t('lang.fr', 'Français')}</option>
@@ -376,7 +369,7 @@ export const Auth: React.FC<{ addToast: Toast }> = ({ addToast }) => {
                       </div>
                       <div>
                         <label className={labelCls}>{t('auth.reg.timezone', 'Timezone')}</label>
-                        <input type="text" value={timezone} onChange={(e) => setTimezone(e.target.value)} className={inputCls} />
+                        <input type="text" value={timezone} onChange={(e) => setTimezone(e.target.value)} className={inputCls} disabled={isLoading} />
                       </div>
                     </div>
                   </div>
@@ -392,6 +385,7 @@ export const Auth: React.FC<{ addToast: Toast }> = ({ addToast }) => {
                     }}
                     className={primaryBtnCls}
                     style={{ minHeight: 44 }}
+                    disabled={isLoading}
                   >
                     <span>{t('auth.reg.next', 'Proceed to Owner Setup')}</span>
                     <ArrowRight className="w-4 h-4" />
@@ -415,19 +409,19 @@ export const Auth: React.FC<{ addToast: Toast }> = ({ addToast }) => {
                       <label className={labelCls}>{t('auth.reg.ownerName', 'Owner Legal Name *')}</label>
                       <input type="text" required value={ownerName}
                         onChange={(e) => setOwnerName(e.target.value)}
-                        placeholder={t('auth.reg.ownerNamePh', 'e.g., Mary Kawira')} className={inputCls} />
+                        placeholder={t('auth.reg.ownerNamePh', 'e.g., Mary Kawira')} className={inputCls} disabled={isLoading} />
                     </div>
                     <div>
                       <label className={labelCls}>{t('auth.reg.ownerPhone', 'Safaricom Phone Number *')}</label>
                       <input type="tel" required value={ownerPhone}
                         onChange={(e) => setOwnerPhone(e.target.value)}
-                        placeholder={t('auth.reg.ownerPhonePh', 'e.g., +254790435584')} className={inputCls} />
+                        placeholder={t('auth.reg.ownerPhonePh', 'e.g., +254790435584')} className={inputCls} disabled={isLoading} />
                     </div>
                     <div>
                       <label className={labelCls}>{t('auth.reg.ownerEmail', 'Primary Email Address *')}</label>
                       <input type="email" required value={ownerEmail}
                         onChange={(e) => setOwnerEmail(e.target.value)}
-                        placeholder={t('auth.reg.ownerEmailPh', 'e.g., mary@gmail.com')} className={inputCls} />
+                        placeholder={t('auth.reg.ownerEmailPh', 'e.g., mary@gmail.com')} className={inputCls} disabled={isLoading} />
                     </div>
 
                     <div className="p-2.5 rounded-lg border
@@ -452,13 +446,13 @@ export const Auth: React.FC<{ addToast: Toast }> = ({ addToast }) => {
                         <label className={labelCls}>{t('auth.reg.password', 'Password *')}</label>
                         <input type="password" required value={password}
                           onChange={(e) => setPassword(e.target.value)}
-                          placeholder="••••••••" className={inputCls} />
+                          placeholder="••••••••" className={inputCls} disabled={isLoading} />
                       </div>
                       <div>
                         <label className={labelCls}>{t('auth.reg.confirm', 'Confirm Password *')}</label>
                         <input type="password" required value={confirmPassword}
                           onChange={(e) => setConfirmPassword(e.target.value)}
-                          placeholder="••••••••" className={inputCls} />
+                          placeholder="••••••••" className={inputCls} disabled={isLoading} />
                       </div>
                     </div>
                   </div>
@@ -472,8 +466,10 @@ export const Auth: React.FC<{ addToast: Toast }> = ({ addToast }) => {
                                  hover:bg-zinc-200 dark:hover:bg-zinc-700
                                  text-zinc-700 dark:text-zinc-200
                                  border border-zinc-200 dark:border-zinc-700
-                                 transition-all cursor-pointer flex items-center justify-center gap-1"
+                                 transition-all cursor-pointer flex items-center justify-center gap-1
+                                 disabled:opacity-50 disabled:cursor-not-allowed"
                       style={{ minHeight: 44 }}
+                      disabled={isLoading}
                     >
                       <ArrowLeft className="w-3.5 h-3.5" />
                       <span>{t('common.back', 'Back')}</span>
@@ -484,11 +480,13 @@ export const Auth: React.FC<{ addToast: Toast }> = ({ addToast }) => {
                                  text-white shadow-sm transition-all cursor-pointer
                                  flex items-center justify-center gap-2
                                  bg-emerald-600 hover:bg-emerald-700
-                                 dark:bg-emerald-500 dark:hover:bg-emerald-400"
+                                 dark:bg-emerald-500 dark:hover:bg-emerald-400
+                                 disabled:opacity-50 disabled:cursor-not-allowed"
                       style={{ minHeight: 44 }}
+                      disabled={isLoading}
                     >
                       <ShieldCheck className="w-4 h-4" />
-                      <span>{t('auth.reg.submit', 'Register Business')}</span>
+                      <span>{isLoading ? t('auth.reg.submitting', 'Registering...') : t('auth.reg.submit', 'Register Business')}</span>
                     </button>
                   </div>
                 </div>
@@ -511,4 +509,3 @@ export const Auth: React.FC<{ addToast: Toast }> = ({ addToast }) => {
 };
 
 export default Auth;
-             
